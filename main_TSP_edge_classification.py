@@ -130,7 +130,7 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
     epoch_train_losses, epoch_val_losses = [], []
     epoch_train_f1s, epoch_val_f1s = [], [] 
     
-    
+    print(MODEL_NAME)
     if MODEL_NAME in ['RingGNN', '3WLGNN']:
         # import train functions specific for WL-GNNs
         from train.train_TSP_edge_classification import train_epoch_dense as train_epoch, evaluate_network_dense as evaluate_network
@@ -163,14 +163,26 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
                 else:   # for all other models common train function
                     epoch_train_loss, epoch_train_f1, optimizer = train_epoch(model, optimizer, device, train_loader, epoch)
                 
-                epoch_val_loss, epoch_val_f1 = evaluate_network(model, device, val_loader, epoch)
-                _, epoch_test_f1 = evaluate_network(model, device, test_loader, epoch)                        
-                
+                train_metrics = evaluate_network(model, device, train_loader, epoch) #if MODEL_NAME not in ['RingGNN', '3WLGNN'] else evaluate_network_dense(model, device, train_loader, epoch)
+                epoch_train_loss = train_metrics['loss']
+                epoch_train_f1 = train_metrics['f1']
+
+                # Validation Evaluation
+                val_metrics = evaluate_network(model, device, val_loader, epoch) #if MODEL_NAME not in ['RingGNN', '3WLGNN'] else evaluate_network_dense(model, device, val_loader, epoch)
+                epoch_val_loss = val_metrics['loss']
+                epoch_val_f1 = val_metrics['f1']
+
+                # Test Evaluation
+                test_metrics = evaluate_network(model, device, test_loader, epoch) #if MODEL_NAME not in ['RingGNN', '3WLGNN'] else evaluate_network_dense(model, device, test_loader, epoch)
+                epoch_test_f1 = test_metrics['f1']
+
+                # Accumulate losses and F1 scores
                 epoch_train_losses.append(epoch_train_loss)
                 epoch_val_losses.append(epoch_val_loss)
                 epoch_train_f1s.append(epoch_train_f1)
                 epoch_val_f1s.append(epoch_val_f1)
 
+                # Log metrics to TensorBoard
                 writer.add_scalar('train/_loss', epoch_train_loss, epoch)
                 writer.add_scalar('val/_loss', epoch_val_loss, epoch)
                 writer.add_scalar('train/_f1', epoch_train_f1, epoch)
@@ -178,11 +190,18 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
                 writer.add_scalar('test/_f1', epoch_test_f1, epoch)
                 writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], epoch)   
 
-                
-                t.set_postfix(time=time.time()-start, lr=optimizer.param_groups[0]['lr'],
-                              train_loss=epoch_train_loss, val_loss=epoch_val_loss,
-                              train_f1=epoch_train_f1, val_f1=epoch_val_f1,
-                              test_f1=epoch_test_f1) 
+                # Update progress bar
+                t.set_postfix(
+                    time=time.time()-start,
+                    lr=optimizer.param_groups[0]['lr'],
+                    train_loss=epoch_train_loss,
+                    val_loss=epoch_val_loss,
+                    train_f1=epoch_train_f1,
+                    val_f1=epoch_val_f1,
+                    test_f1=epoch_test_f1
+                ) 
+
+                per_epoch_time.append(time.time()-start) 
 
                 per_epoch_time.append(time.time()-start)
 
@@ -215,26 +234,45 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
         print('-' * 89)
         print('Exiting from training early because of KeyboardInterrupt')
     
-    _, test_f1 = evaluate_network(model, device, test_loader, epoch)
-    _, train_f1 = evaluate_network(model, device, train_loader, epoch)
-    print("Test F1: {:.4f}".format(test_f1))
-    print("Train F1: {:.4f}".format(train_f1))
+    final_test_metrics = evaluate_network(model, device, test_loader, epoch) #if MODEL_NAME not in ['RingGNN', '3WLGNN'] else evaluate_network_dense(model, device, test_loader, epoch)
+    final_test_f1 = final_test_metrics['f1']
+    final_correct_optimal = final_test_metrics['correct_optimal_edges']
+    final_total_optimal = final_test_metrics['total_optimal_edges']
+    final_total_predicted = final_test_metrics['total_predicted_edges']
+
+    print("Test F1: {:.4f}".format(final_test_f1))
+    print("Correctly Identified Optimal Edges: {}".format(final_correct_optimal))
+    print("Total Optimal Edges: {}".format(final_total_optimal))
+    print("Total Predicted Optimal Edges: {}".format(final_total_predicted))
     print("Convergence Time (Epochs): {:.4f}".format(epoch))
     print("TOTAL TIME TAKEN: {:.4f}s".format(time.time()-t0))
     print("AVG TIME PER EPOCH: {:.4f}s".format(np.mean(per_epoch_time)))
 
+    # Close TensorBoard writer
     writer.close()
 
-    """
-        Write the results in out_dir/results folder
-    """
+    # Write the results to the output file
     with open(write_file_name + '.txt', 'w') as f:
         f.write("""Dataset: {},\nModel: {}\n\nparams={}\n\nnet_params={}\n\n{}\n\nTotal Parameters: {}\n\n
-    FINAL RESULTS\nTEST F1: {:.4f}\nTRAIN F1: {:.4f}\n\n
-    Convergence Time (Epochs): {:.4f}\nTotal Time Taken: {:.4f}hrs\nAverage Time Per Epoch: {:.4f}s\n\n\n"""\
-          .format(DATASET_NAME, MODEL_NAME, params, net_params, model, net_params['total_param'],
-                  np.mean(np.array(test_f1)), np.mean(np.array(train_f1)), epoch, (time.time()-t0)/3600, np.mean(per_epoch_time)))
-    
+    FINAL RESULTS
+    TEST F1: {:.4f}
+    TRAIN F1: {:.4f}
+
+    Convergence Time (Epochs): {:.4f}
+    Total Time Taken: {:.4f}hrs
+    Average Time Per Epoch: {:.4f}s
+
+    Additional Metrics:
+    Correctly Identified Optimal Edges: {}
+    Total Optimal Edges: {}
+    Total Predicted Optimal Edges: {}
+
+    """.format(
+        DATASET_NAME, MODEL_NAME, params, net_params, model, net_params['total_param'],
+        final_test_f1, train_f1,
+        epoch, (time.time()-t0)/3600, np.mean(per_epoch_time),
+        final_correct_optimal, final_total_optimal, final_total_predicted
+    ))    
 
 
 

@@ -38,16 +38,40 @@ def train_epoch_sparse(model, optimizer, device, data_loader, epoch):
     return epoch_loss, epoch_train_f1, optimizer
 
 
+# def evaluate_network_sparse(model, device, data_loader, epoch):
+#     
+#     model.eval()
+#     epoch_test_loss = 0
+#     epoch_test_f1 = 0
+#     nb_data = 0
+#     with torch.no_grad():
+#         for iter, (batch_graphs, batch_labels) in enumerate(data_loader):
+#             batch_graphs = batch_graphs.to(device)
+#             batch_x = batch_graphs.ndata['feat'].to(device)
+#             batch_e = batch_graphs.edata['feat'].to(device)
+#             batch_labels = batch_labels.to(device)
+#
+#             batch_scores = model.forward(batch_graphs, batch_x, batch_e)
+#             loss = model.loss(batch_scores, batch_labels) 
+#             epoch_test_loss += loss.detach().item()
+#             epoch_test_f1 += binary_f1_score(batch_scores, batch_labels)
+#         epoch_test_loss /= (iter + 1)
+#         epoch_test_f1 /= (iter + 1)
+#         
+#     return epoch_test_loss, epoch_test_f1
+#
 def evaluate_network_sparse(model, device, data_loader, epoch):
-    
     model.eval()
     epoch_test_loss = 0
     epoch_test_f1 = 0
-    nb_data = 0
+    total_optimal_edges = 0
+    correct_optimal_edges = 0
+    total_predicted_edges = 0
+
     with torch.no_grad():
         for iter, (batch_graphs, batch_labels) in enumerate(data_loader):
             batch_graphs = batch_graphs.to(device)
-            batch_x = batch_graphs.ndata['feat'].to(device)
+            batch_x = batch_graphs.ndata['feat'].to(device)  # num x feat
             batch_e = batch_graphs.edata['feat'].to(device)
             batch_labels = batch_labels.to(device)
 
@@ -55,15 +79,27 @@ def evaluate_network_sparse(model, device, data_loader, epoch):
             loss = model.loss(batch_scores, batch_labels) 
             epoch_test_loss += loss.detach().item()
             epoch_test_f1 += binary_f1_score(batch_scores, batch_labels)
+
+            # Compute predictions
+            predicted = batch_scores.argmax(dim=1)
+
+            # Update metrics
+            total_optimal_edges += batch_labels.sum().item()
+            correct_optimal_edges += ((batch_labels == 1) & (predicted == 1)).sum().item()
+            total_predicted_edges += (predicted == 1).sum().item()
+
         epoch_test_loss /= (iter + 1)
         epoch_test_f1 /= (iter + 1)
-        
-    return epoch_test_loss, epoch_test_f1
-
-
-
-
-
+    
+    metrics = {
+        'loss': epoch_test_loss,
+        'f1': epoch_test_f1,
+        'total_optimal_edges': total_optimal_edges,
+        'correct_optimal_edges': correct_optimal_edges,
+        'total_predicted_edges': total_predicted_edges
+    }
+    
+    return metrics
 """
     For WL-GNNs
 """
