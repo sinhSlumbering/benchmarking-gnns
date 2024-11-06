@@ -11,14 +11,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--min_nodes", type=int, default=50)
     parser.add_argument("--max_nodes", type=int, default=500)
-    parser.add_argument("--num_samples", type=int, default=10000)
+    parser.add_argument("--num_samples", type=int, default=100)
     parser.add_argument("--filename", type=str, default=None)
     parser.add_argument("--node_dim", type=int, default=2)
-    parser.add_argument("--seed", type=int, default=1234)
+    parser.add_argument("--seed", type=int, default=69)
     opts = parser.parse_args()
     
+    # change this to _train.txt _test.txt _val.txt oh and change seeds
     if opts.filename is None:
-        opts.filename = f"tsp{opts.min_nodes}-{opts.max_nodes}.txt"
+        opts.filename = f"tsp{opts.min_nodes}-{opts.max_nodes}_test.txt"
     
     # Pretty print the run args
     pp.pprint(vars(opts))

@@ -64,16 +64,27 @@ class TSP(Dataset):
             
             edge_feats = []  # edge features i.e. euclidean distances between nodes
             edge_labels = []  # edges_targets as a list
+            src_nodes = []  # edge sources
+            dst_nodes = []  # edge destinations
             # Important!: order of edge_labels must be the same as the order of edges in DGLGraph g
             # We ensure this by adding them together
             for idx in range(num_nodes):
                 for n_idx in knns[idx]:
                     if n_idx != idx:  # No self-connection
-                        g.add_edge(idx, n_idx)
+                        src_nodes.append(idx)
+                        dst_nodes.append(n_idx)
                         edge_feats.append(W_val[idx][n_idx])
                         edge_labels.append(int(edges_target[idx][n_idx]))
-            # dgl.transform.remove_self_loop(g)
-            
+            # converting lists to tensors 
+            src_nodes = torch.tensor(src_nodes)
+            dst_nodes = torch.tensor(dst_nodes)
+
+            # Add all edges to graph
+            g.add_edges(src_nodes, dst_nodes)
+
+            g.edata['feat'] = torch.tensor(edge_feats)
+            g.edata['label'] = torch.tensor(edge_labels)
+
             # Sanity check
             assert len(edge_feats) == g.number_of_edges() == len(edge_labels)
             
