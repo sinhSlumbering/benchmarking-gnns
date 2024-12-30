@@ -9,12 +9,12 @@ from concorde.tsp import TSPSolver  # Install from https://github.com/jvkersch/p
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--min_nodes", type=int, default=50)
-    parser.add_argument("--max_nodes", type=int, default=500)
-    parser.add_argument("--num_samples", type=int, default=100)
+    parser.add_argument("--min_nodes", type=int, default=100)
+    parser.add_argument("--max_nodes", type=int, default=100)
+    parser.add_argument("--num_samples", type=int, default=100000)
     parser.add_argument("--filename", type=str, default=None)
     parser.add_argument("--node_dim", type=int, default=2)
-    parser.add_argument("--seed", type=int, default=69)
+    parser.add_argument("--seed", type=int, default=691)
     opts = parser.parse_args()
     
     # change this to _train.txt _test.txt _val.txt oh and change seeds
