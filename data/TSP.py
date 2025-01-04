@@ -25,14 +25,21 @@ class TSP(Dataset):
     
     
     def _prepare(self):
-        print('preparing all graphs for the %s set...' % self.split.upper())
-
-        file_data = open(self.filename, "r").readlines()[:self.max_samples]
-
+        print('Preparing all graphs for the %s set...' % self.split.upper())
+        
+        with open(self.filename, "r") as file:
+            file_data = file.readlines()[:self.max_samples]
+        
         for graph_idx, line in enumerate(file_data):
-            line = line.split(" ")  # Split into list
-            num_nodes = int(line.index('output') // 2)
-
+            line = line.strip().split(" ")  # Remove trailing newline characters
+            try:
+                output_idx = line.index('output')
+            except ValueError:
+                print(f"'output' keyword not found in line {graph_idx}. Skipping.")
+                continue  # Skip lines without 'output'
+            
+            num_nodes = (output_idx) // 2  # Each node has two coordinates
+            
             # Convert node coordinates to required format
             nodes_coord = []
             for idx in range(0, 2 * num_nodes, 2):
@@ -40,14 +47,12 @@ class TSP(Dataset):
 
             # Compute distance matrix
             W_val = squareform(pdist(nodes_coord, metric='euclidean'))
-            global_max = np.max(W_val)
-            global_min = np.min(W_val + np.eye(num_nodes) * np.inf)  # Ignore self-connections
-
+            
             # Determine k-nearest neighbors for each node
-            knns = np.argpartition(W_val, kth=self.num_neighbors, axis=-1)[:, self.num_neighbors::-1]
+            knns = np.argpartition(W_val, kth=self.num_neighbors, axis=-1)[:, :self.num_neighbors]
 
             # Convert tour nodes to required format
-            tour_nodes = [int(node) - 1 for node in line[line.index('output') + 1:-1]][:-1]
+            tour_nodes = [int(node) - 1 for node in line[output_idx + 1:]][:-1]
 
             # Compute an edge adjacency matrix representation of tour
             edges_target = np.zeros((num_nodes, num_nodes))
@@ -56,58 +61,126 @@ class TSP(Dataset):
                 j = tour_nodes[idx + 1]
                 edges_target[i][j] = 1
                 edges_target[j][i] = 1
-            edges_target[j][tour_nodes[0]] = 1
-            edges_target[tour_nodes[0]][j] = 1
-
+            # Add final connection of tour in edge target
+            last_i = tour_nodes[-1]
+            first_j = tour_nodes[0]
+            edges_target[last_i][first_j] = 1
+            edges_target[first_j][last_i] = 1
+            
             # Construct the DGL graph
-            g = dgl.DGLGraph()
-            g.add_nodes(num_nodes)
-            g.ndata['feat'] = torch.Tensor(nodes_coord)
-
-            edge_feats = []  # edge features i.e., custom edge weights
-            edge_labels = []  # edges_targets as a list
-            src_nodes = []  # edge sources
-            dst_nodes = []  # edge destinations
-
-            for idx in range(num_nodes):
-                left_neigh_max = np.max(W_val[idx])
-                left_neigh_min = np.min(W_val[idx] + np.eye(num_nodes)[idx] * np.inf)
-                for n_idx in knns[idx]:
-                    if n_idx != idx:  # No self-connection
-                        right_neigh_max = np.max(W_val[:, n_idx])
-                        right_neigh_min = np.min(W_val[:, n_idx] + np.eye(num_nodes)[n_idx] * np.inf)
-
-                        weight = W_val[idx][n_idx]
-
-                        # Calculate the additional edge features
-                        feat1 = weight / global_max
-                        feat2 = weight / left_neigh_max
-                        feat3 = weight / right_neigh_max
-                        feat4 = global_min / weight
-                        feat5 = left_neigh_min / weight
-                        feat6 = right_neigh_min / weight
-
-                        # Append features
-                        src_nodes.append(idx)
-                        dst_nodes.append(n_idx)
-                        edge_feats.append([weight, feat1, feat2, feat3, feat4, feat5, feat6])
-                        edge_labels.append(int(edges_target[idx][n_idx]))
-
+            g = dgl.graph(([], []), num_nodes=num_nodes)
+            g.ndata['feat'] = torch.tensor(nodes_coord, dtype=torch.float)
+            
+            edge_feats = []       # Existing edge features: Euclidean distances
+            edge_labels = []      # Edge labels
+            src_nodes = []        # Source nodes for edges
+            dst_nodes = []        # Destination nodes for edges
+            
+            # Populate edge lists and labels
+            for src in range(num_nodes):
+                for dst in knns[src]:
+                    if dst != src:
+                        src_nodes.append(src)
+                        dst_nodes.append(dst)
+                        edge_feats.append(W_val[src][dst])
+                        edge_labels.append(int(edges_target[src][dst]))
+            
             # Convert lists to tensors
-            src_nodes = torch.tensor(src_nodes)
-            dst_nodes = torch.tensor(dst_nodes)
-
-            # Add all edges to graph
-            g.add_edges(src_nodes, dst_nodes)
-
-            g.edata['feat'] = torch.tensor(edge_feats, dtype=torch.float32)
-            g.edata['label'] = torch.tensor(edge_labels, dtype=torch.float32)
-
+            src_nodes = torch.tensor(src_nodes, dtype=torch.long)
+            dst_nodes = torch.tensor(dst_nodes, dtype=torch.long)
+            
+            # Add edges to the graph
+            g = dgl.add_edges(g, src_nodes, dst_nodes)
+            
+            # Handle graphs with no edges
+            if g.num_edges() == 0:
+                print(f"Graph {graph_idx} has no edges. Skipping.")
+                continue
+            
+            # Initialize existing edge features
+            edge_feats_tensor = torch.tensor(edge_feats, dtype=torch.float).unsqueeze(-1)  # [num_edges, 1]
+            
+            # Initialize additional edge features list
+            additional_edge_feats = []
+            
+            # Compute Global Max and Min
+            global_max = W_val.max()
+            global_min = W_val.min()
+            
+            # Precompute neighbors for each node to speed up
+            neighbors = {i: set(knns[i]) - {i} for i in range(num_nodes)}
+            
+            # Compute additional edge features
+            for idx in range(g.num_edges()):
+                src = src_nodes[idx].item()
+                dst = dst_nodes[idx].item()
+                w_ij = W_val[src][dst]
+                
+                # Feature 1: Weight Divided by the Global Max
+                feat1 = w_ij / global_max if global_max != 0 else 0.0
+                
+                # Feature 4: Global Min Divided by Weight
+                feat4 = global_min / w_ij if w_ij != 0 else 0.0
+                
+                # Compute Left Neighbor Max/Min for src
+                left_neighbors = neighbors[src] - {dst}
+                if left_neighbors:
+                    left_weights = W_val[src][list(left_neighbors)]
+                    left_max = left_weights.max()
+                    left_min = left_weights.min()
+                else:
+                    left_max = 1.0  # Default value to avoid division by zero
+                    left_min = 1.0  # Default value
+                
+                # Compute Right Neighbor Max/Min for dst
+                right_neighbors = neighbors[dst] - {src}
+                if right_neighbors:
+                    right_weights = W_val[dst][list(right_neighbors)]
+                    right_max = right_weights.max()
+                    right_min = right_weights.min()
+                else:
+                    right_max = 1.0  # Default value to avoid division by zero
+                    right_min = 1.0  # Default value
+                
+                # Feature 2: Weight Divided by Left Neighbor Max
+                feat2 = w_ij / left_max if left_max != 0 else 0.0
+                
+                # Feature 3: Weight Divided by Right Neighbor Max
+                feat3 = w_ij / right_max if right_max != 0 else 0.0
+                
+                # Feature 5: Left Neighbor Min Divided by Weight
+                feat5 = left_min / w_ij if w_ij != 0 else 0.0
+                
+                # Feature 6: Right Neighbor Min Divided by Weight
+                feat6 = right_min / w_ij if w_ij != 0 else 0.0
+                
+                # Append all features
+                additional_edge_feats.append([feat1, feat2, feat3, feat4, feat5, feat6])
+            
+            # Convert additional features to tensor
+            additional_edge_feats_tensor = torch.tensor(additional_edge_feats, dtype=torch.float)  # [num_edges, 6]
+            
+            # Debug: Print shapes
+            print(f"Graph Index: {graph_idx}")
+            print(f"g.edata['feat'].shape: {edge_feats_tensor.shape}")
+            print(f"additional_edge_feats_tensor.shape: {additional_edge_feats_tensor.shape}")
+            
+            # Concatenate existing and additional edge features
+            g.edata['feat'] = torch.cat([edge_feats_tensor, additional_edge_feats_tensor], dim=1)  # [num_edges, 7]
+            
+            # Assign edge labels
+            g.edata['label'] = torch.tensor(edge_labels, dtype=torch.long)
+            
             # Sanity check
-            assert len(edge_feats) == g.number_of_edges() == len(edge_labels)
-
+            assert g.num_edges() == len(edge_feats) == len(edge_labels), f"Mismatch in edge features and labels length for graph {graph_idx}"
+            assert g.edata['feat'].shape[0] == g.num_edges(), f"Feature dimension mismatch for graph {graph_idx}"
+            assert g.edata['feat'].shape[1] == 7, f"Incorrect number of edge features for graph {graph_idx}"
+            
+            # Add graph and labels to lists
             self.graph_lists.append(g)
             self.edge_labels.append(edge_labels)
+
+
 
     def __len__(self):
         """Return the number of graphs in the dataset."""

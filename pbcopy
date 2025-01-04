@@ -1,0 +1,558 @@
+.
+├── configs
+│   ├── COLLAB_edge_classification_GAT_40k.json
+│   ├── COLLAB_edge_classification_GatedGCN_40k.json
+│   ├── COLLAB_edge_classification_GatedGCN_edgefeat.json
+│   ├── COLLAB_edge_classification_GatedGCN_edgereprfeat.json
+│   ├── COLLAB_edge_classification_GatedGCN_isotropic.json
+│   ├── COLLAB_edge_classification_GatedGCN_PE_40k.json
+│   ├── COLLAB_edge_classification_GAT_edgefeat.json
+│   ├── COLLAB_edge_classification_GAT_edgereprfeat.json
+│   ├── COLLAB_edge_classification_GAT_isotropic.json
+│   ├── COLLAB_edge_classification_GCN_40k.json
+│   ├── COLLAB_edge_classification_GIN_40k.json
+│   ├── COLLAB_edge_classification_GraphSage_40k.json
+│   ├── COLLAB_edge_classification_GraphSage_edgefeat.json
+│   ├── COLLAB_edge_classification_GraphSage_edgereprfeat.json
+│   ├── COLLAB_edge_classification_GraphSage_isotropic.json
+│   ├── COLLAB_edge_classification_MF.json
+│   ├── COLLAB_edge_classification_MLP_40k.json
+│   ├── COLLAB_edge_classification_MoNet_40k.json
+│   ├── CSL_graph_classification_3WLGNN_CSL_100k.json
+│   ├── CSL_graph_classification_3WLGNN_CSL_PE_100k.json
+│   ├── CSL_graph_classification_GAT_CSL_100k.json
+│   ├── CSL_graph_classification_GAT_CSL_PE_100k.json
+│   ├── CSL_graph_classification_GatedGCN_CSL_100k.json
+│   ├── CSL_graph_classification_GatedGCN_CSL_PE_100k.json
+│   ├── CSL_graph_classification_GCN_CSL_100k.json
+│   ├── CSL_graph_classification_GCN_CSL_PE_100k.json
+│   ├── CSL_graph_classification_GIN_CSL_100k.json
+│   ├── CSL_graph_classification_GIN_CSL_PE_100k.json
+│   ├── CSL_graph_classification_GraphSage_CSL_100k.json
+│   ├── CSL_graph_classification_GraphSage_CSL_PE_100k.json
+│   ├── CSL_graph_classification_MLP_CSL_100k.json
+│   ├── CSL_graph_classification_MLP_CSL_PE_100k.json
+│   ├── CSL_graph_classification_MoNet_CSL_100k.json
+│   ├── CSL_graph_classification_MoNet_CSL_PE_100k.json
+│   ├── CSL_graph_classification_RingGNN_CSL_100k.json
+│   ├── CSL_graph_classification_RingGNN_CSL_PE_100k.json
+│   ├── CYCLES_graph_classification_GatedGCN_CYCLES_100k.json
+│   ├── CYCLES_graph_classification_GatedGCN_PE_CYCLES_100k.json
+│   ├── CYCLES_graph_classification_GIN_CYCLES_100k.json
+│   ├── CYCLES_graph_classification_GIN_PE_CYCLES_100k.json
+│   ├── GraphTheoryProp_multitask_GatedGCN_GraphTheoryProp_100k.json
+│   ├── GraphTheoryProp_multitask_GatedGCN_PE_GraphTheoryProp_100k.json
+│   ├── GraphTheoryProp_multitask_GIN_GraphTheoryProp_100k.json
+│   ├── GraphTheoryProp_multitask_GIN_PE_GraphTheoryProp_100k.json
+│   ├── molecules_graph_regression_3WLGNN_AQSOL_100k.json
+│   ├── molecules_graph_regression_3WLGNN_AQSOL_500k.json
+│   ├── molecules_graph_regression_3WLGNN_AQSOL_L8_500k.json
+│   ├── molecules_graph_regression_3WLGNN_ZINC_100k.json
+│   ├── molecules_graph_regression_3WLGNN_ZINC_500k.json
+│   ├── molecules_graph_regression_3WLGNN_ZINC_L8_500k.json
+│   ├── molecules_graph_regression_GAT_AQSOL_100k.json
+│   ├── molecules_graph_regression_GAT_AQSOL_500k.json
+│   ├── molecules_graph_regression_GatedGCN_AQSOL_100k.json
+│   ├── molecules_graph_regression_GatedGCN_AQSOL_500k.json
+│   ├── molecules_graph_regression_GatedGCN_AQSOL_PE_500k.json
+│   ├── molecules_graph_regression_GatedGCN_ZINC_100k.json
+│   ├── molecules_graph_regression_GatedGCN_ZINC_500k.json
+│   ├── molecules_graph_regression_GatedGCN_ZINC_PE_500k.json
+│   ├── molecules_graph_regression_GAT_ZINC_100k.json
+│   ├── molecules_graph_regression_GAT_ZINC_500k.json
+│   ├── molecules_graph_regression_GCN_AQSOL_100k.json
+│   ├── molecules_graph_regression_GCN_AQSOL_500k.json
+│   ├── molecules_graph_regression_GCN_ZINC_100k.json
+│   ├── molecules_graph_regression_GCN_ZINC_500k.json
+│   ├── molecules_graph_regression_GIN_AQSOL_100k.json
+│   ├── molecules_graph_regression_GIN_AQSOL_500k.json
+│   ├── molecules_graph_regression_GIN_ZINC_100k.json
+│   ├── molecules_graph_regression_GIN_ZINC_500k.json
+│   ├── molecules_graph_regression_GraphSage_AQSOL_100k.json
+│   ├── molecules_graph_regression_GraphSage_AQSOL_500k.json
+│   ├── molecules_graph_regression_GraphSage_ZINC_100k.json
+│   ├── molecules_graph_regression_GraphSage_ZINC_500k.json
+│   ├── molecules_graph_regression_MLP_AQSOL_100k.json
+│   ├── molecules_graph_regression_MLP_AQSOL_500k.json
+│   ├── molecules_graph_regression_MLP_ZINC_100k.json
+│   ├── molecules_graph_regression_MLP_ZINC_500k.json
+│   ├── molecules_graph_regression_MoNet_AQSOL_100k.json
+│   ├── molecules_graph_regression_MoNet_AQSOL_500k.json
+│   ├── molecules_graph_regression_MoNet_ZINC_100k.json
+│   ├── molecules_graph_regression_MoNet_ZINC_500k.json
+│   ├── molecules_graph_regression_RingGNN_AQSOL_100k.json
+│   ├── molecules_graph_regression_RingGNN_AQSOL_500k.json
+│   ├── molecules_graph_regression_RingGNN_AQSOL_L8_500k.json
+│   ├── molecules_graph_regression_RingGNN_ZINC_100k.json
+│   ├── molecules_graph_regression_RingGNN_ZINC_500k.json
+│   ├── molecules_graph_regression_RingGNN_ZINC_L8_500k.json
+│   ├── SBMs_node_clustering_3WLGNN_CLUSTER_100k.json
+│   ├── SBMs_node_clustering_3WLGNN_CLUSTER_500k.json
+│   ├── SBMs_node_clustering_3WLGNN_CLUSTER_L8_500k.json
+│   ├── SBMs_node_clustering_3WLGNN_PATTERN_100k.json
+│   ├── SBMs_node_clustering_3WLGNN_PATTERN_500k.json
+│   ├── SBMs_node_clustering_3WLGNN_PATTERN_L8_500k.json
+│   ├── SBMs_node_clustering_GAT_CLUSTER_100k.json
+│   ├── SBMs_node_clustering_GAT_CLUSTER_500k.json
+│   ├── SBMs_node_clustering_GatedGCN_CLUSTER_100k.json
+│   ├── SBMs_node_clustering_GatedGCN_CLUSTER_500k.json
+│   ├── SBMs_node_clustering_GatedGCN_CLUSTER_PE_500k.json
+│   ├── SBMs_node_clustering_GatedGCN_PATTERN_100k.json
+│   ├── SBMs_node_clustering_GatedGCN_PATTERN_500k.json
+│   ├── SBMs_node_clustering_GatedGCN_PATTERN_PE_500k.json
+│   ├── SBMs_node_clustering_GAT_PATTERN_100k.json
+│   ├── SBMs_node_clustering_GAT_PATTERN_500k.json
+│   ├── SBMs_node_clustering_GCN_CLUSTER_100k.json
+│   ├── SBMs_node_clustering_GCN_CLUSTER_500k.json
+│   ├── SBMs_node_clustering_GCN_PATTERN_100k.json
+│   ├── SBMs_node_clustering_GCN_PATTERN_500k.json
+│   ├── SBMs_node_clustering_GIN_CLUSTER_100k.json
+│   ├── SBMs_node_clustering_GIN_CLUSTER_500k.json
+│   ├── SBMs_node_clustering_GIN_PATTERN_100k.json
+│   ├── SBMs_node_clustering_GIN_PATTERN_500k.json
+│   ├── SBMs_node_clustering_GraphSage_CLUSTER_100k.json
+│   ├── SBMs_node_clustering_GraphSage_CLUSTER_500k.json
+│   ├── SBMs_node_clustering_GraphSage_PATTERN_100k.json
+│   ├── SBMs_node_clustering_GraphSage_PATTERN_500k.json
+│   ├── SBMs_node_clustering_MLP_CLUSTER_100k.json
+│   ├── SBMs_node_clustering_MLP_CLUSTER_500k.json
+│   ├── SBMs_node_clustering_MLP_PATTERN_100k.json
+│   ├── SBMs_node_clustering_MLP_PATTERN_500k.json
+│   ├── SBMs_node_clustering_MoNet_CLUSTER_100k.json
+│   ├── SBMs_node_clustering_MoNet_CLUSTER_500k.json
+│   ├── SBMs_node_clustering_MoNet_PATTERN_100k.json
+│   ├── SBMs_node_clustering_MoNet_PATTERN_500k.json
+│   ├── SBMs_node_clustering_RingGNN_CLUSTER_100k.json
+│   ├── SBMs_node_clustering_RingGNN_CLUSTER_500k.json
+│   ├── SBMs_node_clustering_RingGNN_CLUSTER_L8_500k.json
+│   ├── SBMs_node_clustering_RingGNN_PATTERN_100k.json
+│   ├── SBMs_node_clustering_RingGNN_PATTERN_500k.json
+│   ├── SBMs_node_clustering_RingGNN_PATTERN_L8_500k.json
+│   ├── superpixels_graph_classification_3WLGNN_CIFAR10_100k.json
+│   ├── superpixels_graph_classification_3WLGNN_CIFAR10_L8_500k.json
+│   ├── superpixels_graph_classification_3WLGNN_MNIST_100k.json
+│   ├── superpixels_graph_classification_3WLGNN_MNIST_L8_500k.json
+│   ├── superpixels_graph_classification_GAT_CIFAR10_100k.json
+│   ├── superpixels_graph_classification_GatedGCN_CIFAR10_100k.json
+│   ├── superpixels_graph_classification_GatedGCN_MNIST_100k.json
+│   ├── superpixels_graph_classification_GAT_MNIST_100k.json
+│   ├── superpixels_graph_classification_GCN_CIFAR10_100k.json
+│   ├── superpixels_graph_classification_GCN_MNIST_100k.json
+│   ├── superpixels_graph_classification_GIN_CIFAR10_100k.json
+│   ├── superpixels_graph_classification_GIN_MNIST_100k.json
+│   ├── superpixels_graph_classification_GraphSage_CIFAR10_100k.json
+│   ├── superpixels_graph_classification_GraphSage_MNIST_100k.json
+│   ├── superpixels_graph_classification_MLP_CIFAR10_100k.json
+│   ├── superpixels_graph_classification_MLP_MNIST_100k.json
+│   ├── superpixels_graph_classification_MoNet_CIFAR10_100k.json
+│   ├── superpixels_graph_classification_MoNet_MNIST_100k.json
+│   ├── superpixels_graph_classification_RingGNN_CIFAR10_100k.json
+│   ├── superpixels_graph_classification_RingGNN_CIFAR10_L8_500k.json
+│   ├── superpixels_graph_classification_RingGNN_MNIST_100k.json
+│   ├── superpixels_graph_classification_RingGNN_MNIST_L8_500k.json
+│   ├── TSP_edge_classification_3WLGNN_100k.json
+│   ├── TSP_edge_classification_GAT_100k.json
+│   ├── TSP_edge_classification_GatedGCN_100k.json
+│   ├── TSP_edge_classification_GatedGCN_edgefeat.json
+│   ├── TSP_edge_classification_GatedGCN_edgereprfeat.json
+│   ├── TSP_edge_classification_GatedGCN_isotropic.json
+│   ├── TSP_edge_classification_GAT_edgefeat.json
+│   ├── TSP_edge_classification_GAT_edgereprfeat.json
+│   ├── TSP_edge_classification_GAT_isotropic.json
+│   ├── TSP_edge_classification_GCN_100k.json
+│   ├── TSP_edge_classification_GIN_100k.json
+│   ├── TSP_edge_classification_GraphSage_100k.json
+│   ├── TSP_edge_classification_MLP_100k.json
+│   ├── TSP_edge_classification_MoNet_100k.json
+│   ├── TSP_edge_classification_RingGNN_100k.json
+│   ├── TUs_graph_classification_3WLGNN_DD_100k.json
+│   ├── TUs_graph_classification_3WLGNN_ENZYMES_100k.json
+│   ├── TUs_graph_classification_3WLGNN_PROTEINS_full_100k.json
+│   ├── TUs_graph_classification_GAT_DD_100k.json
+│   ├── TUs_graph_classification_GatedGCN_DD_100k.json
+│   ├── TUs_graph_classification_GatedGCN_ENZYMES_100k.json
+│   ├── TUs_graph_classification_GatedGCN_PROTEINS_full_100k.json
+│   ├── TUs_graph_classification_GAT_ENZYMES_100k.json
+│   ├── TUs_graph_classification_GAT_PROTEINS_full_100k.json
+│   ├── TUs_graph_classification_GCN_DD_100k.json
+│   ├── TUs_graph_classification_GCN_ENZYMES_100k.json
+│   ├── TUs_graph_classification_GCN_PROTEINS_full_100k.json
+│   ├── TUs_graph_classification_GIN_DD_100k.json
+│   ├── TUs_graph_classification_GIN_ENZYMES_100k.json
+│   ├── TUs_graph_classification_GIN_PROTEINS_full_100k.json
+│   ├── TUs_graph_classification_GraphSage_DD_100k.json
+│   ├── TUs_graph_classification_GraphSage_ENZYMES_100k.json
+│   ├── TUs_graph_classification_GraphSage_PROTEINS_full_100k.json
+│   ├── TUs_graph_classification_MLP_DD_100k.json
+│   ├── TUs_graph_classification_MLP_ENZYMES_100k.json
+│   ├── TUs_graph_classification_MLP_PROTEINS_full_100k.json
+│   ├── TUs_graph_classification_MoNet_DD_100k.json
+│   ├── TUs_graph_classification_MoNet_ENZYMES_100k.json
+│   ├── TUs_graph_classification_MoNet_PROTEINS_full_100k.json
+│   ├── TUs_graph_classification_RingGNN_DD_100k.json
+│   ├── TUs_graph_classification_RingGNN_ENZYMES_100k.json
+│   ├── TUs_graph_classification_RingGNN_PROTEINS_full_100k.json
+│   ├── WikiCS_node_classification_GAT_100k.json
+│   ├── WikiCS_node_classification_GatedGCN.json
+│   ├── WikiCS_node_classification_GCN_100k.json
+│   ├── WikiCS_node_classification_GIN_100k.json
+│   ├── WikiCS_node_classification_GraphSage_100k.json
+│   ├── WikiCS_node_classification_MLP_100k.json
+│   ├── WikiCS_node_classification_MoNet_100k.json
+│   └── WikiCS_node_classification_MoNet_PE_100k.json
+├── data
+│   ├── COLLAB.py
+│   ├── CSL
+│   │   ├── CSL_test.index
+│   │   ├── CSL_train.index
+│   │   └── CSL_val.index
+│   ├── CSL.py
+│   ├── cycles
+│   │   ├── build_cycles.py
+│   │   └── prepare_cycles.ipynb
+│   ├── cycles.py
+│   ├── data.py
+│   ├── graphtheoryprop
+│   │   └── prepare_graphtheoryprop.ipynb
+│   ├── graphtheoryprop.py
+│   ├── molecules
+│   │   ├── asqol_graph_raw
+│   │   │   ├── atom_dict.pickle
+│   │   │   ├── bond_dict.pickle
+│   │   │   ├── test.pickle
+│   │   │   ├── train.pickle
+│   │   │   └── val.pickle
+│   │   ├── generate_AqSol_raw.ipynb
+│   │   ├── prepare_molecules.ipynb
+│   │   ├── prepare_molecules_ZINC_full.ipynb
+│   │   ├── test.index
+│   │   ├── train.index
+│   │   └── val.index
+│   ├── molecules.py
+│   ├── __pycache__
+│   │   ├── COLLAB.cpython-312.pyc
+│   │   ├── CSL.cpython-312.pyc
+│   │   ├── cycles.cpython-312.pyc
+│   │   ├── data.cpython-312.pyc
+│   │   ├── graphtheoryprop.cpython-312.pyc
+│   │   ├── molecules.cpython-312.pyc
+│   │   ├── SBMs.cpython-312.pyc
+│   │   ├── superpixels.cpython-312.pyc
+│   │   ├── TSP.cpython-312.pyc
+│   │   ├── TUs.cpython-312.pyc
+│   │   └── WikiCS.cpython-312.pyc
+│   ├── SBMs
+│   │   ├── generate_SBM_CLUSTER.ipynb
+│   │   ├── generate_SBM_PATTERN.ipynb
+│   │   ├── prepare_SBM_CLUSTER.ipynb
+│   │   └── prepare_SBM_PATTERN.ipynb
+│   ├── SBMs.py
+│   ├── script_download_all_datasets.sh
+│   ├── script_download_CSL.sh
+│   ├── script_download_cycles.sh
+│   ├── script_download_graphtheoryprop.sh
+│   ├── script_download_molecules.sh
+│   ├── script_download_SBMs.sh
+│   ├── script_download_superpixels.sh
+│   ├── script_download_TSP.sh
+│   ├── script_download_WikiCS.sh
+│   ├── superpixels
+│   │   ├── prepare_superpixels_CIFAR.ipynb
+│   │   └── prepare_superpixels_MNIST.ipynb
+│   ├── superpixels.py
+│   ├── TSP
+│   │   ├── generate_TSP.py
+│   │   ├── prepare_TSP.ipynb
+│   │   ├── tsp100-100_test.txt
+│   │   ├── tsp100-100_train.txt
+│   │   └── tsp100-100_val.txt
+│   ├── TSP.py
+│   ├── TUs
+│   │   ├── COLLAB_test.index
+│   │   ├── COLLAB_train.index
+│   │   ├── COLLAB_val.index
+│   │   ├── DD_test.index
+│   │   ├── DD_train.index
+│   │   ├── DD_val.index
+│   │   ├── ENZYMES_test.index
+│   │   ├── ENZYMES_train.index
+│   │   ├── ENZYMES_val.index
+│   │   ├── PROTEINS_full_test.index
+│   │   ├── PROTEINS_full_train.index
+│   │   ├── PROTEINS_full_val.index
+│   │   └── README.md
+│   ├── TUs.py
+│   └── WikiCS.py
+├── docs
+│   ├── 01_benchmark_installation.md
+│   ├── 02_download_datasets.md
+│   ├── 03_run_codes.md
+│   ├── 04_add_dataset.md
+│   ├── 05_add_mpgcn.md
+│   ├── 06_add_wlgnn.md
+│   ├── gnn_pipeline.JPG
+│   └── gnns.jpg
+├── environment_cpu.yml
+├── environment_gpu.yml
+├── layers
+│   ├── gated_gcn_layer.py
+│   ├── gat_layer.py
+│   ├── gcn_layer.py
+│   ├── gin_layer.py
+│   ├── gmm_layer.py
+│   ├── graphsage_layer.py
+│   ├── mlp_readout_layer.py
+│   ├── __pycache__
+│   │   ├── gated_gcn_layer.cpython-312.pyc
+│   │   ├── gat_layer.cpython-312.pyc
+│   │   ├── gcn_layer.cpython-312.pyc
+│   │   ├── gin_layer.cpython-312.pyc
+│   │   ├── gmm_layer.cpython-312.pyc
+│   │   ├── graphsage_layer.cpython-312.pyc
+│   │   ├── mlp_readout_layer.cpython-312.pyc
+│   │   ├── ring_gnn_equiv_layer.cpython-312.pyc
+│   │   └── three_wl_gnn_layers.cpython-312.pyc
+│   ├── ring_gnn_equiv_layer.py
+│   └── three_wl_gnn_layers.py
+├── LICENSE
+├── main_COLLAB_edge_classification.ipynb
+├── main_COLLAB_edge_classification.py
+├── main_CSL_graph_classification.ipynb
+├── main_CSL_graph_classification.py
+├── main_CYCLES_graph_classification.ipynb
+├── main_CYCLES_graph_classification.py
+├── main_GraphTheoryProp_multitask.ipynb
+├── main_GraphTheoryProp_multitask.py
+├── main_molecules_graph_regression.ipynb
+├── main_molecules_graph_regression.py
+├── main_SBMs_node_classification.ipynb
+├── main_SBMs_node_classification.py
+├── main_superpixels_graph_classification.ipynb
+├── main_superpixels_graph_classification.py
+├── main_TSP_edge_classification.ipynb
+├── main_TSP_edge_classification.py
+├── main_TUs_graph_classification.ipynb
+├── main_TUs_graph_classification.py
+├── main_WikiCS_node_classification.ipynb
+├── main_WikiCS_node_classification.py
+├── nets
+│   ├── COLLAB_edge_classification
+│   │   ├── gated_gcn_net.py
+│   │   ├── gat_net.py
+│   │   ├── gcn_net.py
+│   │   ├── gin_net.py
+│   │   ├── graphsage_net.py
+│   │   ├── load_net.py
+│   │   ├── matrix_factorization.py
+│   │   ├── mlp_net.py
+│   │   └── mo_net.py
+│   ├── CSL_graph_classification
+│   │   ├── gated_gcn_net.py
+│   │   ├── gat_net.py
+│   │   ├── gcn_net.py
+│   │   ├── gin_net.py
+│   │   ├── graphsage_net.py
+│   │   ├── load_net.py
+│   │   ├── mlp_net.py
+│   │   ├── mo_net.py
+│   │   ├── ring_gnn_net.py
+│   │   └── three_wl_gnn_net.py
+│   ├── CYCLES_graph_classification
+│   │   ├── gated_gcn_net.py
+│   │   ├── gin_net.py
+│   │   └── load_net.py
+│   ├── GraphTheoryProp_multitask
+│   │   ├── gated_gcn_net.py
+│   │   ├── gin_net.py
+│   │   └── load_net.py
+│   ├── molecules_graph_regression
+│   │   ├── gated_gcn_net.py
+│   │   ├── gat_net.py
+│   │   ├── gcn_net.py
+│   │   ├── gin_net.py
+│   │   ├── graphsage_net.py
+│   │   ├── load_net.py
+│   │   ├── mlp_net.py
+│   │   ├── mo_net.py
+│   │   ├── ring_gnn_net.py
+│   │   └── three_wl_gnn_net.py
+│   ├── SBMs_node_classification
+│   │   ├── gated_gcn_net.py
+│   │   ├── gat_net.py
+│   │   ├── gcn_net.py
+│   │   ├── gin_net.py
+│   │   ├── graphsage_net.py
+│   │   ├── load_net.py
+│   │   ├── mlp_net.py
+│   │   ├── mo_net.py
+│   │   ├── ring_gnn_net.py
+│   │   └── three_wl_gnn_net.py
+│   ├── superpixels_graph_classification
+│   │   ├── gated_gcn_net.py
+│   │   ├── gat_net.py
+│   │   ├── gcn_net.py
+│   │   ├── gin_net.py
+│   │   ├── graphsage_net.py
+│   │   ├── load_net.py
+│   │   ├── mlp_net.py
+│   │   ├── mo_net.py
+│   │   ├── ring_gnn_net.py
+│   │   └── three_wl_gnn_net.py
+│   ├── TSP_edge_classification
+│   │   ├── gated_gcn_net.py
+│   │   ├── gat_net.py
+│   │   ├── gcn_net.py
+│   │   ├── gin_net.py
+│   │   ├── graphsage_net.py
+│   │   ├── load_net.py
+│   │   ├── mlp_net.py
+│   │   ├── mo_net.py
+│   │   ├── __pycache__
+│   │   │   ├── gated_gcn_net.cpython-312.pyc
+│   │   │   ├── gat_net.cpython-312.pyc
+│   │   │   ├── gcn_net.cpython-312.pyc
+│   │   │   ├── gin_net.cpython-312.pyc
+│   │   │   ├── graphsage_net.cpython-312.pyc
+│   │   │   ├── load_net.cpython-312.pyc
+│   │   │   ├── mlp_net.cpython-312.pyc
+│   │   │   ├── mo_net.cpython-312.pyc
+│   │   │   ├── ring_gnn_net.cpython-312.pyc
+│   │   │   └── three_wl_gnn_net.cpython-312.pyc
+│   │   ├── ring_gnn_net.py
+│   │   └── three_wl_gnn_net.py
+│   ├── TUs_graph_classification
+│   │   ├── gated_gcn_net.py
+│   │   ├── gat_net.py
+│   │   ├── gcn_net.py
+│   │   ├── gin_net.py
+│   │   ├── graphsage_net.py
+│   │   ├── load_net.py
+│   │   ├── mlp_net.py
+│   │   ├── mo_net.py
+│   │   ├── ring_gnn_net.py
+│   │   └── three_wl_gnn_net.py
+│   └── WikiCS_node_classification
+│       ├── gated_gcn_net.py
+│       ├── gat_net.py
+│       ├── gcn_net.py
+│       ├── gin_net.py
+│       ├── graphsage_net.py
+│       ├── load_net.py
+│       ├── mlp_net.py
+│       └── mo_net.py
+├── out
+│   └── TSP_edge_classification
+│       └── GatedGCN
+│           ├── checkpoints
+│           │   ├── GatedGCN_TSP_GPU0_00h05m13s_on_Dec_30_2024
+│           │   │   └── RUN_
+│           │   │       ├── epoch_232.pkl
+│           │   │       └── epoch_233.pkl
+│           │   ├── GatedGCN_TSP_GPU0_03h30m49s_on_Dec_30_2024
+│           │   │   └── RUN_
+│           │   │       ├── epoch_209.pkl
+│           │   │       └── epoch_210.pkl
+│           │   └── GatedGCN_TSP_GPU0_03h50m04s_on_Dec_30_2024
+│           │       └── RUN_
+│           │           ├── epoch_385.pkl
+│           │           └── epoch_386.pkl
+│           ├── configs
+│           │   ├── config_GatedGCN_TSP_GPU0_00h05m13s_on_Dec_30_2024.txt
+│           │   ├── config_GatedGCN_TSP_GPU0_03h30m49s_on_Dec_30_2024.txt
+│           │   └── config_GatedGCN_TSP_GPU0_03h50m04s_on_Dec_30_2024.txt
+│           ├── logs
+│           │   ├── GatedGCN_TSP_GPU0_00h05m13s_on_Dec_30_2024
+│           │   │   └── RUN_0
+│           │   │       └── events.out.tfevents.1735495513.adils-ms7e30
+│           │   ├── GatedGCN_TSP_GPU0_03h30m49s_on_Dec_30_2024
+│           │   │   └── RUN_0
+│           │   │       └── events.out.tfevents.1735507849.adils-ms7e30
+│           │   └── GatedGCN_TSP_GPU0_03h50m04s_on_Dec_30_2024
+│           │       └── RUN_0
+│           │           └── events.out.tfevents.1735509004.adils-ms7e30
+│           └── results
+│               └── result_GatedGCN_TSP_GPU0_03h50m04s_on_Dec_30_2024.txt
+├── package-lock.json
+├── pbcopy
+├── README.md
+├── scripts
+│   ├── AQSOL
+│   │   ├── script_main_molecules_graph_regression_AQSOL_100k.sh
+│   │   ├── script_main_molecules_graph_regression_AQSOL_500k.sh
+│   │   └── script_main_molecules_graph_regression_AQSOL_PE_GatedGCN_500k.sh
+│   ├── COLLAB
+│   │   ├── script_main_COLLAB_edge_classification_40k.sh
+│   │   ├── script_main_COLLAB_edge_classification_edge_feature_analysis.sh
+│   │   └── script_main_COLLAB_edge_classification_PE_GatedGCN_40k.sh
+│   ├── CSL
+│   │   ├── script_main_CSL_graph_classification_20_seeds.sh
+│   │   └── script_main_CSL_graph_classification_PE_20_seeds.sh
+│   ├── CYCLES
+│   │   ├── script_main_CYCLES_graph_classification_all.sh
+│   │   ├── script_main_CYCLES_graph_classification_GatedGCN_100k.sh
+│   │   ├── script_main_CYCLES_graph_classification_GatedGCN_PE_100k.sh
+│   │   ├── script_main_CYCLES_graph_classification_GIN_100k.sh
+│   │   └── script_main_CYCLES_graph_classification_GIN_PE_100k.sh
+│   ├── GraphTheoryProp
+│   │   └── script_main_GraphTheoryProp_multitask_100k.sh
+│   ├── SBMs
+│   │   ├── script_main_SBMs_node_classification_CLUSTER_100k.sh
+│   │   ├── script_main_SBMs_node_classification_CLUSTER_500k.sh
+│   │   ├── script_main_SBMs_node_classification_CLUSTER_PE_GatedGCN_500k.sh
+│   │   ├── script_main_SBMs_node_classification_PATTERN_100k.sh
+│   │   ├── script_main_SBMs_node_classification_PATTERN_500k.sh
+│   │   └── script_main_SBMs_node_classification_PATTERN_PE_GatedGCN_500k.sh
+│   ├── StatisticalResults
+│   │   └── generate_statistics_molecules_graph_regression_ZINC_100k.ipynb
+│   ├── SuperPixels
+│   │   ├── script_main_superpixels_graph_classification_CIFAR10_100k.sh
+│   │   ├── script_main_superpixels_graph_classification_CIFAR10_500k.sh
+│   │   ├── script_main_superpixels_graph_classification_MNIST_100k.sh
+│   │   └── script_main_superpixels_graph_classification_MNIST_500k.sh
+│   ├── TensorBoard
+│   │   └── script_tensorboard.sh
+│   ├── TSP
+│   │   ├── script_main_TSP_edge_classification_100k.sh
+│   │   └── script_main_TSP_edge_classification_edge_feature_analysis.sh
+│   ├── TU
+│   │   ├── script_main_TUs_graph_classification_100k_seed1.sh
+│   │   └── script_main_TUs_graph_classification_100k_seed2.sh
+│   ├── WikiCS
+│   │   └── script_main_WikiCS_node_classification_100k.sh
+│   ├── ZINC
+│   │   ├── script_main_molecules_graph_regression_ZINC_100k.sh
+│   │   ├── script_main_molecules_graph_regression_ZINC_500k.sh
+│   │   └── script_main_molecules_graph_regression_ZINC_PE_GatedGCN_500k.sh
+│   └── ZINC-full
+│       ├── script_main_molecules_graph_regression_ZINC-full_100k.sh
+│       ├── script_main_molecules_graph_regression_ZINC-full_500k.sh
+│       └── script_main_molecules_graph_regression_ZINC-full_PE_GatedGCN_500k.sh
+├── train
+│   ├── metrics.py
+│   ├── __pycache__
+│   │   ├── metrics.cpython-312.pyc
+│   │   └── train_TSP_edge_classification.cpython-312.pyc
+│   ├── train_COLLAB_edge_classification.py
+│   ├── train_CSL_graph_classification.py
+│   ├── train_CYCLES_graph_classification.py
+│   ├── train_GraphTheoryProp_multitask.py
+│   ├── train_molecules_graph_regression.py
+│   ├── train_SBMs_node_classification.py
+│   ├── train_superpixels_graph_classification.py
+│   ├── train_TSP_edge_classification.py
+│   ├── train_TUs_graph_classification.py
+│   └── train_WikiCS_node_classification.py
+├── tsp100-100_test.txt
+├── tsp100-100_train.txt
+├── tsp100-100_val.txt
+├── tsp50-500_test.txt
+├── tsp50-500_train.txt
+├── tsp50-500_val.txt
+├── utils
+│   └── cleaner_main.py
+└── visualization
+    ├── superpixels_visualization_cifar10.ipynb
+    ├── superpixels_visualization_mnist.ipynb
+    └── visualizations_dataset_stats.ipynb
+
+66 directories, 490 files

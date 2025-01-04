@@ -1,0 +1,8 @@
+/home/exp/tsp/benchmarking-gnns/data/TSP.py:45: RuntimeWarning: invalid value encountered in multiply
+  global_min = np.min(W_val + np.eye(num_nodes) * np.inf)  # Ignore self-connections
+/home/exp/.conda/envs/tspres/lib/python3.12/site-packages/dgl/heterograph.py:92: DGLWarning: Recommend creating graphs by `dgl.graph(data)` instead of `dgl.DGLGraph(data)`.
+  dgl_warning(
+/home/exp/tsp/benchmarking-gnns/data/TSP.py:75: RuntimeWarning: invalid value encountered in multiply
+  left_neigh_min = np.min(W_val[idx] + np.eye(num_nodes)[idx] * np.inf)
+/home/exp/tsp/benchmarking-gnns/data/TSP.py:79: RuntimeWarning: invalid value encountered in multiply
+  right_neigh_min = np.min(W_val[:, n_idx] + np.eye(num_nodes)[n_idx] * np.inf)
