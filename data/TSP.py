@@ -58,10 +58,10 @@ class TSP(Dataset):
             edges_target[tour_nodes[0]][j] = 1
             
             # Construct the DGL graph
-            g = dgl.DGLGraph()
-            g.add_nodes(num_nodes)
-            g.ndata['feat'] = torch.Tensor(nodes_coord)
-            
+            # g = dgl.DGLGraph()
+            # g.add_nodes(num_nodes)
+            # g.ndata['feat'] = torch.Tensor(nodes_coord)
+            #
             edge_feats = []  # edge features i.e. euclidean distances between nodes
             edge_labels = []  # edges_targets as a list
             src_nodes = []  # edge sources
@@ -79,8 +79,10 @@ class TSP(Dataset):
             src_nodes = torch.tensor(src_nodes)
             dst_nodes = torch.tensor(dst_nodes)
 
+            g = dgl.graph((src_nodes, dst_nodes), num_nodes=num_nodes)
+            g.ndata = ['feat'] = torch.Tensor(nodes_coord)
             # Add all edges to graph
-            g.add_edges(src_nodes, dst_nodes)
+            # g.add_edges(src_nodes, dst_nodes)
 
             g.edata['feat'] = torch.tensor(edge_feats)
             g.edata['label'] = torch.tensor(edge_labels)
