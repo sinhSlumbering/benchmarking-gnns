@@ -29,7 +29,8 @@ data/TSP/*.txt
 data/TSP/*.pkl
 data/TSP/*.zip
 data/TSP/pyconcorde/
-
+data/TSP/*.txt
+*.txt
 #COLLAB
 data/COLLAB/*
 dataset/
