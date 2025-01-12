@@ -75,6 +75,7 @@ def view_model_param(MODEL_NAME, net_params):
     total_param = 0
     print("MODEL DETAILS:\n")
     print(model)
+    print(model.parameters())
     for param in model.parameters():
         # print(param.data.size())
         total_param += np.prod(list(param.data.size()))
@@ -86,91 +87,134 @@ def view_model_param(MODEL_NAME, net_params):
     TRAINING CODE
 """
 
+import os
+import time
+import random
+import numpy as np
+import torch
+import torch.optim as optim
+from torch.utils.data import DataLoader
+from tensorboardX import SummaryWriter
+import glob
+from tqdm import tqdm
+import logging
+
 def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
+    """
+    Training and validation pipeline for edge classification models.
+    """
+    # Setup logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
+    # Record start time
     t0 = time.time()
     per_epoch_time = []
         
     DATASET_NAME = dataset.name
-    
-    #assert net_params['self_loop'] == False, "No self-loop support for %s dataset" % DATASET_NAME
     
     trainset, valset, testset = dataset.train, dataset.val, dataset.test
         
     root_log_dir, root_ckpt_dir, write_file_name, write_config_file = dirs
     device = net_params['device']
     
-    # Write the network and optimization hyper-parameters in folder config/
+    # Write the network and optimization hyperparameters in folder config/
+    os.makedirs(os.path.dirname(write_config_file), exist_ok=True)
     with open(write_config_file + '.txt', 'w') as f:
-        f.write("""Dataset: {},\nModel: {}\n\nparams={}\n\nnet_params={}\n\n\nTotal Parameters: {}\n\n"""                .format(DATASET_NAME, MODEL_NAME, params, net_params, net_params['total_param']))
-        
+        f.write("""
+Dataset: {},
+Model: {}
+
+params={}
+net_params={}
+
+Total Parameters: {}
+""".format(DATASET_NAME, MODEL_NAME, params, net_params, net_params['total_param']))
+    
+    # Initialize SummaryWriter for TensorBoard
     log_dir = os.path.join(root_log_dir, "RUN_" + str(0))
     writer = SummaryWriter(log_dir=log_dir)
 
-    # setting seeds
+    # Setting seeds
     random.seed(params['seed'])
     np.random.seed(params['seed'])
     torch.manual_seed(params['seed'])
     if device.type == 'cuda':
         torch.cuda.manual_seed(params['seed'])
     
-    print("Training Graphs: ", len(trainset))
-    print("Validation Graphs: ", len(valset))
-    print("Test Graphs: ", len(testset))
-    print("Number of Classes: ", net_params['n_classes'])
+    logger.info("Training Graphs: {}".format(len(trainset)))
+    logger.info("Validation Graphs: {}".format(len(valset)))
+    logger.info("Test Graphs: {}".format(len(testset)))
+    logger.info("Number of Classes: {}".format(net_params['n_classes']))
 
+    # Initialize model
     model = gnn_model(MODEL_NAME, net_params)
     model = model.to(device)
 
+    # Initialize optimizer and scheduler
     optimizer = optim.Adam(model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
                                                      factor=params['lr_reduce_factor'],
                                                      patience=params['lr_schedule_patience'],
                                                      verbose=True)
     
+    # Initialize lists for recording metrics
     epoch_train_losses, epoch_val_losses = [], []
     epoch_train_f1s, epoch_val_f1s = [], [] 
     
-    
     if MODEL_NAME in ['RingGNN', '3WLGNN']:
-        # import train functions specific for WL-GNNs
-        from train.train_TSP_edge_classification import train_epoch_dense as train_epoch, evaluate_network_dense as evaluate_network
-        from functools import partial # util function to pass edge_feat to collate function
+        # Import train functions specific for WL-GNNs
+        from train.train_TSP_edge_classification import train_epoch_dense as train_epoch
+        from train.train_TSP_edge_classification import evaluate_network_dense as evaluate_network
+        from functools import partial  # Utility function to pass edge_feat to collate function
         
-        train_loader = DataLoader(trainset, shuffle=True, collate_fn=partial(dataset.collate_dense_gnn, edge_feat=net_params['edge_feat']))
-        val_loader = DataLoader(valset, shuffle=False, collate_fn=partial(dataset.collate_dense_gnn, edge_feat=net_params['edge_feat']))
-        test_loader = DataLoader(testset, shuffle=False, collate_fn=partial(dataset.collate_dense_gnn, edge_feat=net_params['edge_feat']))
+        train_loader = DataLoader(trainset, shuffle=True, 
+                                  collate_fn=partial(dataset.collate_dense_gnn, edge_feat=net_params['edge_feat']))
+        val_loader = DataLoader(valset, shuffle=False, 
+                                collate_fn=partial(dataset.collate_dense_gnn, edge_feat=net_params['edge_feat']))
+        test_loader = DataLoader(testset, shuffle=False, 
+                                 collate_fn=partial(dataset.collate_dense_gnn, edge_feat=net_params['edge_feat']))
 
     else:
-        # import train functions for all other GCNs
-        from train.train_TSP_edge_classification import train_epoch_sparse as train_epoch, evaluate_network_sparse as evaluate_network
+        # Import train functions for all other GCNs
+        from train.train_TSP_edge_classification import train_epoch_sparse as train_epoch
+        from train.train_TSP_edge_classification import evaluate_network_sparse as evaluate_network
 
         train_loader = DataLoader(trainset, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
         val_loader = DataLoader(valset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
         test_loader = DataLoader(testset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
     
+    # Number of classes
+    num_classes = net_params['n_classes']
     
-    # At any point you can hit Ctrl + C to break out of training early.
+    # Training loop
     try:
-        with tqdm(range(params['epochs'])) as t:
+        with tqdm(range(params['epochs']), desc='Training') as t:
             for epoch in t:
-
-                t.set_description('Epoch %d' % epoch)    
-
                 start = time.time()
                 
-                if MODEL_NAME in ['RingGNN', '3WLGNN']: # since different batch training function for dense GNNs
-                    epoch_train_loss, epoch_train_f1, optimizer = train_epoch(model, optimizer, device, train_loader, epoch, params['batch_size'])
-                else:   # for all other models common train function
-                    epoch_train_loss, epoch_train_f1, optimizer = train_epoch(model, optimizer, device, train_loader, epoch)
+                # Training epoch
+                if MODEL_NAME in ['RingGNN', '3WLGNN']:  # Different training function for dense GNNs
+                    epoch_train_loss, epoch_train_f1, optimizer, train_per_class_correct, train_total = \
+                        train_epoch(model, optimizer, device, train_loader, epoch, params['batch_size'])
+                else:  # For all other models common train function
+                    epoch_train_loss, epoch_train_f1, optimizer, train_per_class_correct, train_total = \
+                        train_epoch(model, optimizer, device, train_loader, epoch)
                 
-                epoch_val_loss, epoch_val_f1 = evaluate_network(model, device, val_loader, epoch)
-                _, epoch_test_f1 = evaluate_network(model, device, test_loader, epoch)                        
-                
+                # Validation
+                epoch_val_loss, epoch_val_f1, val_per_class_correct, val_total = \
+                    evaluate_network(model, device, val_loader, epoch)
+                # Testing
+                epoch_test_loss, epoch_test_f1, test_per_class_correct, test_total = \
+                    evaluate_network(model, device, test_loader, epoch)
+
+                # Record metrics
                 epoch_train_losses.append(epoch_train_loss)
                 epoch_val_losses.append(epoch_val_loss)
                 epoch_train_f1s.append(epoch_train_f1)
                 epoch_val_f1s.append(epoch_val_f1)
 
+                # Log metrics to TensorBoard
                 writer.add_scalar('train/_loss', epoch_train_loss, epoch)
                 writer.add_scalar('val/_loss', epoch_val_loss, epoch)
                 writer.add_scalar('train/_f1', epoch_train_f1, epoch)
@@ -178,63 +222,107 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
                 writer.add_scalar('test/_f1', epoch_test_f1, epoch)
                 writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], epoch)   
 
-                
-                t.set_postfix(time=time.time()-start, lr=optimizer.param_groups[0]['lr'],
+                # Log per-class correct counts
+                for cls in range(num_classes):
+                    train_cls_correct = train_per_class_correct[cls]
+                    val_cls_correct = val_per_class_correct[cls]
+                    test_cls_correct = test_per_class_correct[cls]
+                    writer.add_scalar(f'train/class_{cls}_correct', train_cls_correct, epoch)
+                    writer.add_scalar(f'val/class_{cls}_correct', val_cls_correct, epoch)
+                    writer.add_scalar(f'test/class_{cls}_correct', test_cls_correct, epoch)
+
+                # Build status string
+                status_str = (
+                    f"Epoch {epoch}, Time: {time.time()-start:.2f}s, "
+                    f"LR: {optimizer.param_groups[0]['lr']:.6f}, "
+                    f"Train Loss: {epoch_train_loss:.4f}, Val Loss: {epoch_val_loss:.4f}, "
+                    f"Train F1: {epoch_train_f1:.4f}, Val F1: {epoch_val_f1:.4f}, "
+                    f"Test F1: {epoch_test_f1:.4f}"
+                )
+                # Add per-class correct counts to status
+                for cls in range(num_classes):
+                    status_str += (f", Train_C{cls}_Correct: {train_per_class_correct[cls]}, "
+                                   f"Val_C{cls}_Correct: {val_per_class_correct[cls]}, "
+                                   f"Test_C{cls}_Correct: {test_per_class_correct[cls]}")
+                logger.info(status_str)
+                t.set_postfix(epoch=epoch, time=time.time()-start, lr=optimizer.param_groups[0]['lr'],
                               train_loss=epoch_train_loss, val_loss=epoch_val_loss,
                               train_f1=epoch_train_f1, val_f1=epoch_val_f1,
-                              test_f1=epoch_test_f1) 
+                              test_f1=epoch_test_f1)
 
                 per_epoch_time.append(time.time()-start)
 
                 # Saving checkpoint
                 ckpt_dir = os.path.join(root_ckpt_dir, "RUN_")
-                if not os.path.exists(ckpt_dir):
-                    os.makedirs(ckpt_dir)
-                torch.save(model.state_dict(), '{}.pkl'.format(ckpt_dir + "/epoch_" + str(epoch)))
+                os.makedirs(ckpt_dir, exist_ok=True)
+                torch.save(model.state_dict(), os.path.join(ckpt_dir, f"epoch_{epoch}.pkl"))
 
+                # Remove old checkpoints
                 files = glob.glob(ckpt_dir + '/*.pkl')
                 for file in files:
-                    epoch_nb = file.split('_')[-1]
-                    epoch_nb = int(epoch_nb.split('.')[0])
-                    if epoch_nb < epoch-1:
+                    epoch_nb = int(file.split('_')[-1].split('.')[0])
+                    if epoch_nb < epoch - 1:
                         os.remove(file)
 
+                # Step the scheduler
                 scheduler.step(epoch_val_loss)
 
+                # Early stopping
                 if optimizer.param_groups[0]['lr'] < params['min_lr']:
-                    print("\n!! LR EQUAL TO MIN LR SET.")
+                    logger.info("\n!! LR EQUAL TO MIN LR SET.")
                     break
                     
                 # Stop training after params['max_time'] hours
-                if time.time()-t0 > params['max_time']*3600:
-                    print('-' * 89)
-                    print("Max_time for training elapsed {:.2f} hours, so stopping".format(params['max_time']))
+                if time.time() - t0 > params['max_time'] * 3600:
+                    logger.info('-' * 89)
+                    logger.info("Max_time for training elapsed {:.2f} hours, so stopping".format(params['max_time']))
                     break
-    
+        
     except KeyboardInterrupt:
-        print('-' * 89)
-        print('Exiting from training early because of KeyboardInterrupt')
+        logger.info('-' * 89)
+        logger.info('Exiting from training early because of KeyboardInterrupt')
     
-    _, test_f1 = evaluate_network(model, device, test_loader, epoch)
-    _, train_f1 = evaluate_network(model, device, train_loader, epoch)
-    print("Test F1: {:.4f}".format(test_f1))
-    print("Train F1: {:.4f}".format(train_f1))
-    print("Convergence Time (Epochs): {:.4f}".format(epoch))
-    print("TOTAL TIME TAKEN: {:.4f}s".format(time.time()-t0))
-    print("AVG TIME PER EPOCH: {:.4f}s".format(np.mean(per_epoch_time)))
+    # Final evaluation on test and train sets
+    _, test_f1, test_per_class_correct, test_total = evaluate_network(model, device, test_loader, epoch)
+    _, train_f1, train_per_class_correct, train_total = evaluate_network(model, device, train_loader, epoch)
+    logger.info("Final Test F1: {:.4f}".format(test_f1))
+    logger.info("Final Train F1: {:.4f}".format(train_f1))
+    logger.info("Convergence Time (Epochs): {:.4f}".format(epoch))
+    logger.info("TOTAL TIME TAKEN: {:.4f}s".format(time.time() - t0))
+    logger.info("AVG TIME PER EPOCH: {:.4f}s".format(np.mean(per_epoch_time)))
 
+    # Close TensorBoard writer
     writer.close()
 
     """
         Write the results in out_dir/results folder
     """
+    os.makedirs(os.path.dirname(write_file_name), exist_ok=True)
     with open(write_file_name + '.txt', 'w') as f:
-        f.write("""Dataset: {},\nModel: {}\n\nparams={}\n\nnet_params={}\n\n{}\n\nTotal Parameters: {}\n\n
-    FINAL RESULTS\nTEST F1: {:.4f}\nTRAIN F1: {:.4f}\n\n
-    Convergence Time (Epochs): {:.4f}\nTotal Time Taken: {:.4f}hrs\nAverage Time Per Epoch: {:.4f}s\n\n\n"""\
-          .format(DATASET_NAME, MODEL_NAME, params, net_params, model, net_params['total_param'],
-                  np.mean(np.array(test_f1)), np.mean(np.array(train_f1)), epoch, (time.time()-t0)/3600, np.mean(per_epoch_time)))
-    
+        f.write("""
+Dataset: {},
+Model: {}
+
+params={}
+net_params={}
+{}
+
+Total Parameters: {}
+
+FINAL RESULTS
+TEST F1: {:.4f}
+TRAIN F1: {:.4f}
+
+Per-Class Correct Counts (Test Set):
+""".format(DATASET_NAME, MODEL_NAME, params, net_params, model, net_params['total_param'],
+            test_f1, train_f1))
+        for cls in range(num_classes):
+            f.write("Class {} Correct: {}\n".format(cls, test_per_class_correct[cls]))
+        f.write("""
+Convergence Time (Epochs): {:.4f}
+Total Time Taken: {:.4f}hrs
+Average Time Per Epoch: {:.4f}s
+""".format(epoch, (time.time() - t0) / 3600, np.mean(per_epoch_time)))
 
 
 

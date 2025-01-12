@@ -80,7 +80,7 @@ class TSP(Dataset):
             dst_nodes = torch.tensor(dst_nodes)
 
             g = dgl.graph((src_nodes, dst_nodes), num_nodes=num_nodes)
-            g.ndata = ['feat'] = torch.Tensor(nodes_coord)
+            g.ndata['feat'] = torch.Tensor(nodes_coord)
             # Add all edges to graph
             # g.add_edges(src_nodes, dst_nodes)
 
