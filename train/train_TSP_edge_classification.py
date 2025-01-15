@@ -13,17 +13,19 @@ from train.metrics import binary_f1_score
     For GCNs
 """
 def train_epoch_sparse(model, optimizer, device, data_loader, epoch):
-
     model.train()
     epoch_loss = 0
     epoch_train_f1 = 0
-    nb_data = 0
-    gpu_mem = 0
+
+    # Initialize counts
+    total_predicted_as_1 = 0
+    total_correctly_predicted_as_1 = 0
+
     for iter, (batch_graphs, batch_labels) in enumerate(data_loader):
         batch_graphs = batch_graphs.to(device)
-        batch_x = batch_graphs.ndata['feat'].to(device)  # num x feat
-        batch_e = batch_graphs.edata['feat'].to(device)
-        batch_labels = batch_labels.to(device)
+        batch_x = batch_graphs.ndata['feat'].to(device)  # Node features
+        batch_e = batch_graphs.edata['feat'].to(device)  # Edge features
+        batch_labels = batch_labels.to(device)  # Edge labels
         optimizer.zero_grad()
         
         batch_scores = model.forward(batch_graphs, batch_x, batch_e)
@@ -32,18 +34,34 @@ def train_epoch_sparse(model, optimizer, device, data_loader, epoch):
         optimizer.step()
         epoch_loss += loss.detach().item()
         epoch_train_f1 += binary_f1_score(batch_scores, batch_labels)
+
+        # Compute predictions
+        preds = torch.argmax(batch_scores, dim=1)
+        labels = batch_labels
+
+        # Compute total number of edges predicted as type 1
+        predicted_as_1 = (preds == 1)
+        total_predicted_as_1 += predicted_as_1.sum().item()
+
+        # Compute total number of correctly predicted edges as type 1
+        correctly_predicted_as_1 = ((preds == 1) & (labels == 1))
+        total_correctly_predicted_as_1 += correctly_predicted_as_1.sum().item()
+
     epoch_loss /= (iter + 1)
     epoch_train_f1 /= (iter + 1)
     
-    return epoch_loss, epoch_train_f1, optimizer
+    return epoch_loss, epoch_train_f1, optimizer, total_predicted_as_1, total_correctly_predicted_as_1
 
 
 def evaluate_network_sparse(model, device, data_loader, epoch):
-    
     model.eval()
     epoch_test_loss = 0
     epoch_test_f1 = 0
-    nb_data = 0
+
+    # Initialize counts
+    total_predicted_as_1 = 0
+    total_correctly_predicted_as_1 = 0
+
     with torch.no_grad():
         for iter, (batch_graphs, batch_labels) in enumerate(data_loader):
             batch_graphs = batch_graphs.to(device)
@@ -55,13 +73,23 @@ def evaluate_network_sparse(model, device, data_loader, epoch):
             loss = model.loss(batch_scores, batch_labels) 
             epoch_test_loss += loss.detach().item()
             epoch_test_f1 += binary_f1_score(batch_scores, batch_labels)
-        epoch_test_loss /= (iter + 1)
-        epoch_test_f1 /= (iter + 1)
-        
-    return epoch_test_loss, epoch_test_f1
 
+            # Compute predictions
+            preds = torch.argmax(batch_scores, dim=1)
+            labels = batch_labels
 
+            # Compute total number of edges predicted as type 1
+            predicted_as_1 = (preds == 1)
+            total_predicted_as_1 += predicted_as_1.sum().item()
 
+            # Compute total number of correctly predicted edges as type 1
+            correctly_predicted_as_1 = ((preds == 1) & (labels == 1))
+            total_correctly_predicted_as_1 += correctly_predicted_as_1.sum().item()
+
+    epoch_test_loss /= (iter + 1)
+    epoch_test_f1 /= (iter + 1)
+    
+    return epoch_test_loss, epoch_test_f1, total_predicted_as_1, total_correctly_predicted_as_1
 
 
 """

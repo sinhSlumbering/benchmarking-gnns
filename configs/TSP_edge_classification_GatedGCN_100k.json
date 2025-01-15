@@ -11,7 +11,7 @@
     
     "params": {
         "seed": 41,
-        "epochs": 5,
+        "epochs": 20,
         "batch_size": 64,
         "init_lr": 0.001,
         "lr_reduce_factor": 0.5,
@@ -32,6 +32,7 @@
         "in_feat_dropout": 0.0,
         "dropout": 0.0,
         "batch_norm": true,
-        "layer_type": "edgereprfeat"
+        "layer_type": "edgereprfeat",
+        "class_weights": [0.01,0.99]
     }
 }

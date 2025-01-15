@@ -58,7 +58,7 @@ def binary_f1_score(scores, targets):
     """
     y_true = targets.cpu().numpy()
     y_pred = scores.argmax(dim=1).cpu().numpy()
-    return f1_score(y_true, y_pred, average='micro')
+    return f1_score(y_true, y_pred, average='binary')
 
   
 def accuracy_VOC(scores, targets):

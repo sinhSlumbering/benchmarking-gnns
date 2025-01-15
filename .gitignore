@@ -30,6 +30,8 @@ data/TSP/*.pkl
 data/TSP/*.zip
 data/TSP/pyconcorde/
 data/TSP/*.txt
+data/TSP/closet/*.*
+*.pkl
 *.txt
 #COLLAB
 data/COLLAB/*

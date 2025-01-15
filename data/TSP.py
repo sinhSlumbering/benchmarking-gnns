@@ -10,10 +10,10 @@ from torch.utils.data import Dataset
 
 
 class TSP(Dataset):
-    def __init__(self, data_dir, split="train", num_neighbors=25, max_samples=10000):    
+    def __init__(self, data_dir, split="train", num_neighbors=99, max_samples=100000):    
         self.data_dir = data_dir
         self.split = split
-        self.filename = f'{data_dir}/tsp50-500_{split}.txt'
+        self.filename = f'{data_dir}/tsp100-100_{split}.txt'
         self.max_samples = max_samples
         self.num_neighbors = num_neighbors
         self.is_test = split.lower() in ['test', 'val']
@@ -25,13 +25,13 @@ class TSP(Dataset):
     
     def _prepare(self):
         print('preparing all graphs for the %s set...' % self.split.upper())
-        
+
         file_data = open(self.filename, "r").readlines()[:self.max_samples]
-        
+
         for graph_idx, line in enumerate(file_data):
             line = line.split(" ")  # Split into list
             num_nodes = int(line.index('output')//2)
-            
+
             # Convert node coordinates to required format
             nodes_coord = []
             for idx in range(0, 2 * num_nodes, 2):
@@ -39,11 +39,11 @@ class TSP(Dataset):
 
             # Compute distance matrix
             W_val = squareform(pdist(nodes_coord, metric='euclidean'))
+
             # Determine k-nearest neighbors for each node
             knns = np.argpartition(W_val, kth=self.num_neighbors, axis=-1)[:, self.num_neighbors::-1]
 
             # Convert tour nodes to required format
-            # Don't add final connection for tour/cycle
             tour_nodes = [int(node) - 1 for node in line[line.index('output') + 1:-1]][:-1]
 
             # Compute an edge adjacency matrix representation of tour
@@ -53,52 +53,72 @@ class TSP(Dataset):
                 j = tour_nodes[idx + 1]
                 edges_target[i][j] = 1
                 edges_target[j][i] = 1
-            # Add final connection of tour in edge target
+
             edges_target[j][tour_nodes[0]] = 1
             edges_target[tour_nodes[0]][j] = 1
-            
-            # Construct the DGL graph
-            # g = dgl.DGLGraph()
-            # g.add_nodes(num_nodes)
-            # g.ndata['feat'] = torch.Tensor(nodes_coord)
-            #
-            edge_feats = []  # edge features i.e. euclidean distances between nodes
-            edge_labels = []  # edges_targets as a list
-            src_nodes = []  # edge sources
-            dst_nodes = []  # edge destinations
-            # Important!: order of edge_labels must be the same as the order of edges in DGLGraph g
-            # We ensure this by adding them together
+
+            # Initialize lists for edge features and labels
+            edge_feats = []  # edge features
+            edge_labels = []
+            src_nodes = []
+            dst_nodes = []
+
+            global_max_weight = W_val.max()
+            global_min_weight = W_val.min() if W_val.min() != 0 else 1e-9
+
             for idx in range(num_nodes):
+                left_neighbors = knns[idx][:self.num_neighbors // 2]
+                right_neighbors = knns[idx][self.num_neighbors // 2:]
+
+                max_left_weight = W_val[idx, left_neighbors].max() if len(left_neighbors) > 0 else 1e-9
+                max_right_weight = W_val[idx, right_neighbors].max() if len(right_neighbors) > 0 else 1e-9
+
+                min_left_weight = W_val[idx, left_neighbors].min() if len(left_neighbors) > 0 else 1e-9
+                min_right_weight = W_val[idx, right_neighbors].min() if len(right_neighbors) > 0 else 1e-9
+
                 for n_idx in knns[idx]:
                     if n_idx != idx:  # No self-connection
                         src_nodes.append(idx)
                         dst_nodes.append(n_idx)
-                        edge_feats.append(W_val[idx][n_idx])
+
+                        weight = W_val[idx][n_idx]
+
+                        # Compute additional edge features
+                        feat_global_max = weight / global_max_weight
+                        feat_max_left = weight / max_left_weight
+                        feat_max_right = weight / max_right_weight
+                        feat_min_left = min_left_weight / weight if weight != 0 else 0
+                        feat_min_right = min_right_weight / weight if weight != 0 else 0
+                        feat_global_min = global_min_weight / weight if weight != 0 else 0
+
+                        edge_feats.append([
+                            feat_global_max,
+                            feat_max_left,
+                            feat_max_right,
+                            feat_min_left,
+                            feat_min_right,
+                            feat_global_min
+                        ])
+
                         edge_labels.append(int(edges_target[idx][n_idx]))
-            # converting lists to tensors 
+
+            # Convert lists to tensors
             src_nodes = torch.tensor(src_nodes)
             dst_nodes = torch.tensor(dst_nodes)
 
             g = dgl.graph((src_nodes, dst_nodes), num_nodes=num_nodes)
-            g.ndata['feat'] = torch.Tensor(nodes_coord)
-            # Add all edges to graph
-            # g.add_edges(src_nodes, dst_nodes)
+            g.ndata['feat'] = torch.tensor(nodes_coord)
 
-            g.edata['feat'] = torch.tensor(edge_feats)
-            g.edata['label'] = torch.tensor(edge_labels)
+            # Add edge features and labels
+            g.edata['feat'] = torch.tensor(edge_feats, dtype=torch.float32)
+            g.edata['label'] = torch.tensor(edge_labels, dtype=torch.int64)
 
             # Sanity check
             assert len(edge_feats) == g.number_of_edges() == len(edge_labels)
-            
-            # Add edge features
-            g.edata['feat'] = torch.Tensor(edge_feats).unsqueeze(-1)
-            
-            # # Uncomment to add dummy edge features instead (for Residual Gated ConvNet)
-            # edge_feat_dim = g.ndata['feat'].shape[1] # dim same as node feature dim
-            # g.edata['feat'] = torch.ones(g.number_of_edges(), edge_feat_dim)
-            
+
             self.graph_lists.append(g)
             self.edge_labels.append(edge_labels)
+
 
     def __len__(self):
         """Return the number of graphs in the dataset."""
@@ -123,9 +143,9 @@ class TSP(Dataset):
 class TSPDatasetDGL(Dataset):
     def __init__(self, name):
         self.name = name
-        self.train = TSP(data_dir='./data/TSP', split='train', num_neighbors=25, max_samples=10000) 
-        self.val = TSP(data_dir='./data/TSP', split='val', num_neighbors=25, max_samples=1000)
-        self.test = TSP(data_dir='./data/TSP', split='test', num_neighbors=25, max_samples=1000)
+        self.train = TSP(data_dir='./data/TSP', split='train', num_neighbors=99, max_samples=100000) 
+        self.val = TSP(data_dir='./data/TSP', split='val', num_neighbors=99, max_samples=100000)
+        self.test = TSP(data_dir='./data/TSP', split='test', num_neighbors=99, max_samples=100000)
         
 
 class TSPDataset(Dataset):

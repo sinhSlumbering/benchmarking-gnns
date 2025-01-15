@@ -42,12 +42,17 @@ class GatedGCNNet(nn.Module):
                                                       self.batch_norm, self.residual) for _ in range(n_layers-1) ]) 
         self.layers.append(self.layer_type(hidden_dim, out_dim, dropout, self.batch_norm, self.residual))
         self.MLP_layer = MLPReadout(2*out_dim, n_classes)
+        if 'class_weights' in net_params and net_params['class_weights'] is not None:
+            class_weights = torch.tensor(net_params['class_weights'], dtype=torch.float).to(self.device)
+            self.criterion = nn.CrossEntropyLoss(weight=class_weights)
+        else:
+            self.criterion = nn.CrossEntropyLoss()
         
     def forward(self, g, h, e):
         
         h = self.embedding_h(h.float())
         if not self.edge_feat:
-            e = torch.ones_like(e).to(self.device)
+            e = torcg.ones_like(e).to(self.device)
         e = self.embedding_e(e.float())
         
         # convnets
@@ -64,8 +69,8 @@ class GatedGCNNet(nn.Module):
         return g.edata['e']
     
     def loss(self, pred, label):
-        criterion = nn.CrossEntropyLoss(weight=None)
-        loss = criterion(pred, label)
+        #criterion = nn.CrossEntropyLoss(weight=None)
+        loss = self.criterion(pred, label)
 
         return loss
     
