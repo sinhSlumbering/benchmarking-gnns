@@ -64,14 +64,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--min_nodes", type=int, default=100)
     parser.add_argument("--max_nodes", type=int, default=100)
-    parser.add_argument("--num_samples", type=int, default=100000)
+    parser.add_argument("--num_samples", type=int, default=10000)
     parser.add_argument("--filename", type=str, default=None)
     parser.add_argument("--node_dim", type=int, default=2)
-    parser.add_argument("--seed", type=int, default=62239)
+    parser.add_argument("--seed", type=int, default=62279)
     opts = parser.parse_args()
 
     if opts.filename is None:
-        opts.filename = f"tsp{opts.min_nodes}-{opts.max_nodes}bols.txt"
+        opts.filename = f"tsp{opts.min_nodes}-{opts.max_nodes}bolsz.txt"
 
     pp.pprint(vars(opts))
 

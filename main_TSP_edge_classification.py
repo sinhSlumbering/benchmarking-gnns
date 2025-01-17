@@ -403,6 +403,164 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
                       test_f1, train_f1, epoch, (time.time() - t0) / 3600, np.mean(per_epoch_time)))
 
 
+
+
+
+def train_val_pipeline_chunked(MODEL_NAME, dataset, params, net_params, dirs):
+    t0 = time.time()
+    per_epoch_time = []
+        
+    DATASET_NAME = dataset.name
+    trainset, valset, testset = dataset.train, dataset.val, dataset.test
+        
+    root_log_dir, root_ckpt_dir, write_file_name, write_config_file = dirs
+    device = net_params['device']
+    
+    # Write the network and optimization hyper-parameters in folder config/
+    with open(write_config_file + '.txt', 'w') as f:
+        f.write("""Dataset: {},\nModel: {}\n\nparams={}\n\nnet_params={}\n\nTotal Parameters: {}\n\n"""                .format(DATASET_NAME, MODEL_NAME, params, net_params, net_params['total_param']))
+        
+    log_dir = os.path.join(root_log_dir, "RUN_" + str(0))
+    writer = SummaryWriter(log_dir=log_dir)
+
+    # Setting seeds
+    random.seed(params['seed'])
+    np.random.seed(params['seed'])
+    torch.manual_seed(params['seed'])
+    if device.type == 'cuda':
+        torch.cuda.manual_seed(params['seed'])
+    
+    print("Total Training Graphs: ", len(trainset))
+    print("Validation Graphs: ", len(valset))
+    print("Test Graphs: ", len(testset))
+    print("Number of Classes: ", net_params['n_classes'])
+
+    model = gnn_model(MODEL_NAME, net_params)
+    model = model.to(device)
+
+    optimizer = optim.Adam(model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
+                                                     factor=params['lr_reduce_factor'],
+                                                     patience=params['lr_schedule_patience'],
+                                                     verbose=True)
+    
+    epoch_train_losses, epoch_val_losses = [], []
+    epoch_train_f1s, epoch_val_f1s = [], [] 
+    
+    # Import train functions for GNNs
+    from train.train_TSP_edge_classification import train_epoch_sparse as train_epoch, evaluate_network_sparse as evaluate_network
+
+    val_loader = DataLoader(valset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
+    test_loader = DataLoader(testset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
+    
+    # Now, split trainset into chunks of size 10000
+    num_train_samples = len(trainset)
+    chunk_size = 10000
+    num_chunks = (num_train_samples + chunk_size - 1) // chunk_size
+    epochs_per_chunk = 10  # Number of epochs to train per chunk
+
+    total_epochs = 0
+
+    for chunk_idx in range(num_chunks):
+        print("Processing chunk {}/{}".format(chunk_idx+1, num_chunks))
+
+        chunk_start = chunk_idx * chunk_size
+        chunk_end = min(chunk_start + chunk_size, num_train_samples)
+        train_indices = list(range(chunk_start, chunk_end))
+        from torch.utils.data import Subset
+        trainset_chunk = Subset(trainset, train_indices)
+
+        train_loader = DataLoader(trainset_chunk, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
+
+        print("Number of graphs in chunk:", len(trainset_chunk))
+
+        # Train for epochs_per_chunk epochs or until convergence
+        for epoch in range(epochs_per_chunk):
+
+            t_start = time.time()
+
+            total_epochs += 1
+
+            # Training
+            (epoch_train_loss, epoch_train_f1, optimizer,
+                train_total_predicted_as_1, train_total_correctly_predicted_as_1) = train_epoch(
+                model, optimizer, device, train_loader, epoch)
+            
+            # Validation
+            (epoch_val_loss, epoch_val_f1,
+                val_total_predicted_as_1, val_total_correctly_predicted_as_1) = evaluate_network(
+                model, device, val_loader, epoch)
+            
+            # Testing
+            (epoch_test_loss, epoch_test_f1,
+                test_total_predicted_as_1, test_total_correctly_predicted_as_1) = evaluate_network(
+                model, device, test_loader, epoch)                     
+
+            epoch_train_losses.append(epoch_train_loss)
+            epoch_val_losses.append(epoch_val_loss)
+            epoch_train_f1s.append(epoch_train_f1)
+            epoch_val_f1s.append(epoch_val_f1)
+
+            writer.add_scalar('train/_loss', epoch_train_loss, total_epochs)
+            writer.add_scalar('val/_loss', epoch_val_loss, total_epochs)
+            writer.add_scalar('train/_f1', epoch_train_f1, total_epochs)
+            writer.add_scalar('val/_f1', epoch_val_f1, total_epochs)
+            writer.add_scalar('test/_f1', epoch_test_f1, total_epochs)
+            writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], total_epochs)
+
+            t_end = time.time()
+
+            per_epoch_time.append(t_end - t_start)
+
+            print("Epoch {}, Time: {:.4f}, LR: {:.6f}, Train Loss: {:.4f}, Val Loss: {:.4f}, Train F1: {:.4f}, Val F1: {:.4f}, Test F1: {:.4f}".format(
+                total_epochs, t_end - t_start, optimizer.param_groups[0]['lr'], epoch_train_loss, epoch_val_loss, epoch_train_f1, epoch_val_f1, epoch_test_f1))
+
+            # Saving checkpoint
+            ckpt_dir = os.path.join(root_ckpt_dir, "RUN_")
+            if not os.path.exists(ckpt_dir):
+                os.makedirs(ckpt_dir)
+            torch.save(model.state_dict(), '{}.pkl'.format(ckpt_dir + "/epoch_" + str(total_epochs)))
+
+            files = glob.glob(ckpt_dir + '/*.pkl')
+            for file in files:
+                epoch_nb = file.split('_')[-1]
+                epoch_nb = int(epoch_nb.split('.')[0])
+                if epoch_nb < total_epochs - 1:
+                    os.remove(file)
+
+            scheduler.step(epoch_val_loss)
+
+            if optimizer.param_groups[0]['lr'] < params['min_lr']:
+                print("\n!! LR EQUAL TO MIN LR SET.")
+                break
+
+            # Stop training after params['max_time'] hours
+            if time.time() - t0 > params['max_time'] * 3600:
+                print('-' * 89)
+                print("Max_time for training elapsed {:.2f} hours, so stopping".format(params['max_time']))
+                break
+
+    # Final evaluation on test set
+    _, test_f1 = evaluate_network(model, device, test_loader, epoch)
+    _, train_f1 = evaluate_network(model, device, train_loader, epoch)
+    print("Test F1: {:.4f}".format(test_f1))
+    print("Train F1: {:.4f}".format(train_f1))
+    print("Convergence Time (Epochs): {:.4f}".format(total_epochs))
+    print("TOTAL TIME TAKEN: {:.4f}s".format(time.time() - t0))
+    print("AVG TIME PER EPOCH: {:.4f}s".format(np.mean(per_epoch_time)))
+
+    writer.close()
+
+    # Write the results
+    with open(write_file_name + '.txt', 'w') as f:
+        f.write("""Dataset: {},\nModel: {}\n\nparams={}\n\nnet_params={}\n\n{}\n\nTotal Parameters: {}\n\n
+    FINAL RESULTS\nTEST F1: {:.4f}\nTRAIN F1: {:.4f}\n\n
+    Convergence Time (Epochs): {:.4f}\nTotal Time Taken: {:.4f}hrs\nAverage Time Per Epoch: {:.4f}s\n\n\n"""\
+                .format(DATASET_NAME, MODEL_NAME, params, net_params, model, net_params['total_param'],
+                        test_f1, train_f1, total_epochs, (time.time() - t0) / 3600, np.mean(per_epoch_time)))
+
+
+
 def main():    
     """
         USER CONTROLS
@@ -573,7 +731,6 @@ def main():
     net_params['total_param'] = view_model_param(MODEL_NAME, net_params)
     train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs)
 
-    
     
     
     

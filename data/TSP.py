@@ -152,7 +152,11 @@ class TSPDataset(Dataset):
     # form a mini batch from a given list of samples = [(graph, label) pairs]
     def collate(self, samples):
         # The input samples is a list of pairs (graph, label).
+        # print(f"[DEBUG] len(samples) = {len(samples)}")
+        # for i, s in enumerate(samples):
+        #     print(f"[DEBUG] sample[{i}] has type {type(s)} and length {len(s)}")
         graphs, labels = map(list, zip(*samples))
+        
         # Edge classification labels need to be flattened to 1D lists
         labels = torch.LongTensor(np.array(list(itertools.chain(*labels))))
         #tab_sizes_n = [ graphs[i].number_of_nodes() for i in range(len(graphs))]
