@@ -1,8 +1,3 @@
-
-
-
-
-
 """
     IMPORTING LIBS
 """
@@ -42,7 +37,7 @@ class DotDict(dict):
     IMPORTING CUSTOM MODULES/METHODS
 """
 from nets.TSP_edge_classification.load_net import gnn_model # import all GNNS
-from data.data import LoadData # import dataset
+from data.load_data import LoadData # import dataset
 
 
 
@@ -130,9 +125,33 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
     # Import train functions for GNNs
     from train.train_TSP_edge_classification import train_epoch_sparse as train_epoch, evaluate_network_sparse as evaluate_network
 
-    train_loader = DataLoader(trainset, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
-    val_loader = DataLoader(valset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
-    test_loader = DataLoader(testset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
+    train_loader = DataLoader(
+        trainset, 
+        batch_size=params['batch_size'], 
+        # batch_size = 1,
+        shuffle=True, 
+        collate_fn=dataset.collate,  
+        # num_workers=0, 
+        # pin_memory=True
+        )
+    val_loader = DataLoader(
+        valset, 
+        batch_size=params['batch_size'],
+        # batch_size=1, 
+        shuffle=False, 
+        collate_fn=dataset.collate,     
+        # num_workers=0, 
+        # pin_memory=True
+        )
+    test_loader = DataLoader(
+        testset, 
+        # batch_size=params['batch_size'],
+        batch_size=1, 
+        shuffle=False, 
+        collate_fn=dataset.collate,   
+        # num_workers=0, 
+        # pin_memory=True
+        )
     
     # Main training loop
     try:
