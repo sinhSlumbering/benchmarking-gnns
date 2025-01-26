@@ -81,7 +81,7 @@ def view_model_param(MODEL_NAME, net_params):
     TRAINING CODE
 """
 
-def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
+def train_val_pipeline_chunked(MODEL_NAME, dataset, params, net_params, dirs):
     t0 = time.time()
     per_epoch_time = []
         
@@ -105,13 +105,16 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
     if device.type == 'cuda':
         torch.cuda.manual_seed(params['seed'])
     
-    print("Training Graphs: ", len(trainset))
+    print("Total Training Graphs: ", len(trainset))
     print("Validation Graphs: ", len(valset))
     print("Test Graphs: ", len(testset))
     print("Number of Classes: ", net_params['n_classes'])
 
+    # Initialize model with gradient checkpointing
     model = gnn_model(MODEL_NAME, net_params)
     model = model.to(device)
+    if hasattr(model, 'use_checkpoint'):
+        model.use_checkpoint = True
 
     optimizer = optim.Adam(model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
@@ -125,33 +128,51 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
     # Import train functions for GNNs
     from train.train_TSP_edge_classification import train_epoch_sparse as train_epoch, evaluate_network_sparse as evaluate_network
 
-    train_loader = DataLoader(
-        trainset, 
-        batch_size=params['batch_size'], 
-        # batch_size = 1,
-        shuffle=True, 
-        collate_fn=dataset.collate,  
-        # num_workers=0, 
-        # pin_memory=True
+        # Enable memory-efficient data loading
+    # Now, split trainset into chunks of size 10000
+    num_train_samples = len(trainset)
+    chunk_size = 10000
+    num_chunks = (num_train_samples + chunk_size - 1) // chunk_size
+    
+    # Process training data in chunks
+    for chunk_idx in range(num_chunks):
+        start_idx = chunk_idx * chunk_size
+        end_idx = min((chunk_idx + 1) * chunk_size, num_train_samples)
+        chunk_trainset = torch.utils.data.Subset(trainset, range(start_idx, end_idx))
+        
+        train_loader = DataLoader(
+            chunk_trainset, 
+            batch_size=params['batch_size'], 
+            shuffle=True, 
+            collate_fn=dataset.collate,  
+            num_workers=2, 
+            pin_memory=True,
+            prefetch_factor=2
         )
     val_loader = DataLoader(
         valset, 
         batch_size=params['batch_size'],
-        # batch_size=1, 
         shuffle=False, 
         collate_fn=dataset.collate,     
-        # num_workers=0, 
-        # pin_memory=True
-        )
+        num_workers=2, 
+        pin_memory=True,
+        prefetch_factor=2
+    )
     test_loader = DataLoader(
         testset, 
-        # batch_size=params['batch_size'],
-        batch_size=1, 
+        batch_size=params['batch_size'],
         shuffle=False, 
         collate_fn=dataset.collate,   
-        # num_workers=0, 
-        # pin_memory=True
-        )
+        num_workers=2, 
+        pin_memory=True,
+        prefetch_factor=2
+    )
+    
+    # Initialize early stopping
+    best_val_loss = float('inf')
+    patience = 20
+    patience_counter = 0
+    best_model_path = os.path.join(root_ckpt_dir, "best_model.pt")
     
     # Main training loop
     try:
@@ -275,13 +296,16 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
     if device.type == 'cuda':
         torch.cuda.manual_seed(params['seed'])
     
-    print("Training Graphs: ", len(trainset))
+    print("Total Training Graphs: ", len(trainset))
     print("Validation Graphs: ", len(valset))
     print("Test Graphs: ", len(testset))
     print("Number of Classes: ", net_params['n_classes'])
 
+    # Initialize model with gradient checkpointing
     model = gnn_model(MODEL_NAME, net_params)
     model = model.to(device)
+    if hasattr(model, 'use_checkpoint'):
+        model.use_checkpoint = True
 
     optimizer = optim.Adam(model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
@@ -298,6 +322,12 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
     train_loader = DataLoader(trainset, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
     val_loader = DataLoader(valset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
     test_loader = DataLoader(testset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
+    
+    # Initialize early stopping
+    best_val_loss = float('inf')
+    patience = 20
+    patience_counter = 0
+    best_model_path = os.path.join(root_ckpt_dir, "best_model.pt")
     
     # Main training loop
     try:
@@ -454,8 +484,11 @@ def train_val_pipeline_chunked(MODEL_NAME, dataset, params, net_params, dirs):
     print("Test Graphs: ", len(testset))
     print("Number of Classes: ", net_params['n_classes'])
 
+    # Initialize model with gradient checkpointing
     model = gnn_model(MODEL_NAME, net_params)
     model = model.to(device)
+    if hasattr(model, 'use_checkpoint'):
+        model.use_checkpoint = True
 
     optimizer = optim.Adam(model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
@@ -756,4 +789,4 @@ def main():
     
     
     
-main()    
+main()
