@@ -38,6 +38,7 @@ class DotDict(dict):
 """
 from nets.TSP_edge_classification.load_net import gnn_model # import all GNNS
 from data.load_data import LoadData # import dataset
+from data.stream_data import StreamingTSPDataset # import streaming dataset
 
 
 
@@ -81,13 +82,20 @@ def view_model_param(MODEL_NAME, net_params):
     TRAINING CODE
 """
 
-def train_val_pipeline_chunked(MODEL_NAME, dataset, params, net_params, dirs):
+def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
     t0 = time.time()
     per_epoch_time = []
         
     DATASET_NAME = dataset.name
-    trainset, valset, testset = dataset.train, dataset.val, dataset.test
-        
+    
+    # Check if we're using the streaming dataset
+    is_streaming = isinstance(dataset, StreamingTSPDataset)
+    
+    if is_streaming:
+        trainset, valset, testset = dataset.train, dataset.val, dataset.test
+    else:
+        trainset, valset, testset = dataset.train, dataset.val, dataset.test
+    
     root_log_dir, root_ckpt_dir, write_file_name, write_config_file = dirs
     device = net_params['device']
     
@@ -105,16 +113,13 @@ def train_val_pipeline_chunked(MODEL_NAME, dataset, params, net_params, dirs):
     if device.type == 'cuda':
         torch.cuda.manual_seed(params['seed'])
     
-    print("Total Training Graphs: ", len(trainset))
+    print("Training Graphs: ", len(trainset))
     print("Validation Graphs: ", len(valset))
     print("Test Graphs: ", len(testset))
     print("Number of Classes: ", net_params['n_classes'])
 
-    # Initialize model with gradient checkpointing
     model = gnn_model(MODEL_NAME, net_params)
     model = model.to(device)
-    if hasattr(model, 'use_checkpoint'):
-        model.use_checkpoint = True
 
     optimizer = optim.Adam(model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
@@ -122,61 +127,54 @@ def train_val_pipeline_chunked(MODEL_NAME, dataset, params, net_params, dirs):
                                                      patience=params['lr_schedule_patience'],
                                                      verbose=True)
     
+    # Load checkpoint if exists and resume_training is True
+    start_epoch = 0
+    checkpoint_path = os.path.join(root_ckpt_dir, "checkpoint.pth")
+    if os.path.exists(checkpoint_path) and params.get('resume_training', False):
+        checkpoint = torch.load(checkpoint_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1
+        print(f"Resuming training from epoch {start_epoch}")
+
     epoch_train_losses, epoch_val_losses = [], []
     epoch_train_f1s, epoch_val_f1s = [], [] 
     
     # Import train functions for GNNs
     from train.train_TSP_edge_classification import train_epoch_sparse as train_epoch, evaluate_network_sparse as evaluate_network
 
-        # Enable memory-efficient data loading
-    # Now, split trainset into chunks of size 10000
-    num_train_samples = len(trainset)
-    chunk_size = 10000
-    num_chunks = (num_train_samples + chunk_size - 1) // chunk_size
-    
-    # Process training data in chunks
-    for chunk_idx in range(num_chunks):
-        start_idx = chunk_idx * chunk_size
-        end_idx = min((chunk_idx + 1) * chunk_size, num_train_samples)
-        chunk_trainset = torch.utils.data.Subset(trainset, range(start_idx, end_idx))
-        
-        train_loader = DataLoader(
-            chunk_trainset, 
-            batch_size=params['batch_size'], 
-            shuffle=True, 
-            collate_fn=dataset.collate,  
-            num_workers=2, 
-            pin_memory=True,
-            prefetch_factor=2
+    train_loader = DataLoader(
+        trainset, 
+        batch_size=params['batch_size'], 
+        # batch_size = 1,
+        shuffle=True, 
+        collate_fn=dataset.collate,  
+        # num_workers=0, 
+        # pin_memory=True
         )
     val_loader = DataLoader(
         valset, 
         batch_size=params['batch_size'],
+        # batch_size=1, 
         shuffle=False, 
         collate_fn=dataset.collate,     
-        num_workers=2, 
-        pin_memory=True,
-        prefetch_factor=2
-    )
+        # num_workers=0, 
+        # pin_memory=True
+        )
     test_loader = DataLoader(
         testset, 
-        batch_size=params['batch_size'],
+        # batch_size=params['batch_size'],
+        batch_size=1, 
         shuffle=False, 
         collate_fn=dataset.collate,   
-        num_workers=2, 
-        pin_memory=True,
-        prefetch_factor=2
-    )
-    
-    # Initialize early stopping
-    best_val_loss = float('inf')
-    patience = 20
-    patience_counter = 0
-    best_model_path = os.path.join(root_ckpt_dir, "best_model.pt")
+        # num_workers=0, 
+        # pin_memory=True
+        )
     
     # Main training loop
     try:
-        with tqdm(range(params['epochs'])) as t:
+        with tqdm(range(start_epoch, params['epochs'])) as t:
             for epoch in t:
 
                 t.set_description('Epoch %d' % epoch)    
@@ -231,6 +229,18 @@ def train_val_pipeline_chunked(MODEL_NAME, dataset, params, net_params, dirs):
                 if not os.path.exists(ckpt_dir):
                     os.makedirs(ckpt_dir)
                 torch.save(model.state_dict(), '{}.pkl'.format(ckpt_dir + "/epoch_" + str(epoch)))
+
+                # Save checkpoint
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'scheduler_state_dict': scheduler.state_dict(),
+                    'train_losses': epoch_train_losses,
+                    'val_losses': epoch_val_losses,
+                    'train_f1s': epoch_train_f1s,
+                    'val_f1s': epoch_val_f1s,
+                }, checkpoint_path)
 
                 files = glob.glob(ckpt_dir + '/*.pkl')
                 for file in files:
@@ -296,16 +306,13 @@ def train_val_pipeline_chunked(MODEL_NAME, dataset, params, net_params, dirs):
     if device.type == 'cuda':
         torch.cuda.manual_seed(params['seed'])
     
-    print("Total Training Graphs: ", len(trainset))
+    print("Training Graphs: ", len(trainset))
     print("Validation Graphs: ", len(valset))
     print("Test Graphs: ", len(testset))
     print("Number of Classes: ", net_params['n_classes'])
 
-    # Initialize model with gradient checkpointing
     model = gnn_model(MODEL_NAME, net_params)
     model = model.to(device)
-    if hasattr(model, 'use_checkpoint'):
-        model.use_checkpoint = True
 
     optimizer = optim.Adam(model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
@@ -322,12 +329,6 @@ def train_val_pipeline_chunked(MODEL_NAME, dataset, params, net_params, dirs):
     train_loader = DataLoader(trainset, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
     val_loader = DataLoader(valset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
     test_loader = DataLoader(testset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
-    
-    # Initialize early stopping
-    best_val_loss = float('inf')
-    patience = 20
-    patience_counter = 0
-    best_model_path = os.path.join(root_ckpt_dir, "best_model.pt")
     
     # Main training loop
     try:
@@ -484,11 +485,8 @@ def train_val_pipeline_chunked(MODEL_NAME, dataset, params, net_params, dirs):
     print("Test Graphs: ", len(testset))
     print("Number of Classes: ", net_params['n_classes'])
 
-    # Initialize model with gradient checkpointing
     model = gnn_model(MODEL_NAME, net_params)
     model = model.to(device)
-    if hasattr(model, 'use_checkpoint'):
-        model.use_checkpoint = True
 
     optimizer = optim.Adam(model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
