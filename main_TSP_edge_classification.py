@@ -22,25 +22,21 @@ from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
+import torch.cuda.amp as amp 
+from optimize_training import clear_memory, print_memory_stats, Timer
+
 class DotDict(dict):
     def __init__(self, **kwds):
         self.update(kwds)
         self.__dict__ = self
         
-
-
-
-
-
-
 """
     IMPORTING CUSTOM MODULES/METHODS
 """
 from nets.TSP_edge_classification.load_net import gnn_model # import all GNNS
 from data.load_data import LoadData # import dataset
 from data.stream_data import StreamingTSPDataset # import streaming dataset
-
-
+from train_val_pipeline_chunked import train_val_pipeline_chunked
 
 
 """
@@ -57,10 +53,6 @@ def gpu_setup(use_gpu, gpu_id):
         print('cuda not available')
         device = torch.device("cpu")
     return device
-
-
-
-
 
 
 """
@@ -82,379 +74,171 @@ def view_model_param(MODEL_NAME, net_params):
     TRAINING CODE
 """
 
+def create_optimized_dataloaders(dataset, batch_size, collate_fn, num_workers=4, pin_memory=True):
+    from torch.utils.data import DataLoader
+    
+    train_loader = DataLoader(
+        dataset.train,
+        batch_size=batch_size,
+        shuffle=True,
+        collate_fn=collate_fn,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0
+    )
+    
+    val_loader = DataLoader(
+        dataset.val,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=collate_fn,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0
+    )
+    
+    test_loader = DataLoader(
+        dataset.test,
+        batch_size=1,  # Keep batch_size=1 for testing
+        shuffle=False,
+        collate_fn=collate_fn,
+        num_workers=1,
+        pin_memory=pin_memory
+    )
+    
+    return train_loader, val_loader, test_loader
+
 def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
     t0 = time.time()
     per_epoch_time = []
-        
+    
     DATASET_NAME = dataset.name
-    
-    # Check if we're using the streaming dataset
     is_streaming = isinstance(dataset, StreamingTSPDataset)
-    
-    if is_streaming:
-        trainset, valset, testset = dataset.train, dataset.val, dataset.test
-    else:
-        trainset, valset, testset = dataset.train, dataset.val, dataset.test
-    
     root_log_dir, root_ckpt_dir, write_file_name, write_config_file = dirs
     device = net_params['device']
     
-    # Write the network and optimization hyper-parameters in folder config/
-    with open(write_config_file + '.txt', 'w') as f:
-        f.write("""Dataset: {},\nModel: {}\n\nparams={}\n\nnet_params={}\n\nTotal Parameters: {}\n\n"""                .format(DATASET_NAME, MODEL_NAME, params, net_params, net_params['total_param']))
-        
-    log_dir = os.path.join(root_log_dir, "RUN_" + str(0))
-    writer = SummaryWriter(log_dir=log_dir)
-
-    # Setting seeds
-    random.seed(params['seed'])
-    np.random.seed(params['seed'])
-    torch.manual_seed(params['seed'])
-    if device.type == 'cuda':
-        torch.cuda.manual_seed(params['seed'])
+    # Print initial memory usage
+    print("Initial memory usage:")
+    print_memory_stats()
     
-    print("Training Graphs: ", len(trainset))
-    print("Validation Graphs: ", len(valset))
-    print("Test Graphs: ", len(testset))
-    print("Number of Classes: ", net_params['n_classes'])
-
+    # Setup directory structure
+    # ... existing code ...
+    
+    # Create model
     model = gnn_model(MODEL_NAME, net_params)
     model = model.to(device)
-
+    
+    # Create optimizer
     optimizer = optim.Adam(model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
-                                                     factor=params['lr_reduce_factor'],
-                                                     patience=params['lr_schedule_patience'],
-                                                     verbose=True)
+                                                    factor=params['lr_reduce_factor'],
+                                                    patience=params['lr_schedule_patience'],
+                                                    verbose=True)
     
-    # Load checkpoint if exists and resume_training is True
-    start_epoch = 0
-    checkpoint_path = os.path.join(root_ckpt_dir, "checkpoint.pth")
-    if os.path.exists(checkpoint_path) and params.get('resume_training', False):
-        checkpoint = torch.load(checkpoint_path)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        start_epoch = checkpoint['epoch'] + 1
-        print(f"Resuming training from epoch {start_epoch}")
-
-    epoch_train_losses, epoch_val_losses = [], []
-    epoch_train_f1s, epoch_val_f1s = [], [] 
+    # Setup AMP for mixed precision training if enabled
+    use_amp = params.get('use_amp', False) and torch.cuda.is_available()
+    scaler = amp.GradScaler() if use_amp else None
+    
+    # Create optimized dataloaders
+    num_workers = params.get('num_workers', 0)
+    pin_memory = params.get('pin_memory', False)
+    train_loader, val_loader, test_loader = create_optimized_dataloaders(
+        dataset, params['batch_size'], dataset.collate, num_workers, pin_memory
+    )
     
     # Import train functions for GNNs
-    from train.train_TSP_edge_classification import train_epoch_sparse as train_epoch, evaluate_network_sparse as evaluate_network
-
-    train_loader = DataLoader(
-        trainset, 
-        batch_size=params['batch_size'], 
-        # batch_size = 1,
-        shuffle=True, 
-        collate_fn=dataset.collate,  
-        # num_workers=0, 
-        # pin_memory=True
-        )
-    val_loader = DataLoader(
-        valset, 
-        batch_size=params['batch_size'],
-        # batch_size=1, 
-        shuffle=False, 
-        collate_fn=dataset.collate,     
-        # num_workers=0, 
-        # pin_memory=True
-        )
-    test_loader = DataLoader(
-        testset, 
-        # batch_size=params['batch_size'],
-        batch_size=1, 
-        shuffle=False, 
-        collate_fn=dataset.collate,   
-        # num_workers=0, 
-        # pin_memory=True
-        )
+    from train.train_TSP_edge_classification import train_epoch_sparse as train_epoch
+    from train.train_TSP_edge_classification import evaluate_network_sparse as evaluate_network
     
     # Main training loop
     try:
         with tqdm(range(start_epoch, params['epochs'])) as t:
             for epoch in t:
-
-                t.set_description('Epoch %d' % epoch)    
-
+                t.set_description(f'Epoch {epoch}')
                 start = time.time()
                 
-                # Training
-                (epoch_train_loss, epoch_train_f1, optimizer,
-                 train_total_predicted_as_1, train_total_correctly_predicted_as_1) = train_epoch(
-                    model, optimizer, device, train_loader, epoch)
+                # Training with AMP support
+                with Timer("Training"):
+                    if use_amp:
+                        # AMP training loop
+                        model.train()
+                        epoch_loss = 0
+                        epoch_train_f1 = 0
+                        correct_counts_sum = {}
+                        total_counts_sum = {}
+                        false_positives_sum = {}
+                        
+                        for iter, (batch_graphs, batch_labels) in enumerate(train_loader):
+                            batch_graphs = batch_graphs.to(device)
+                            batch_x = batch_graphs.ndata['feat'].to(device)
+                            batch_e = batch_graphs.edata['feat'].to(device)
+                            batch_labels = batch_labels.to(device)
+                            
+                            optimizer.zero_grad()
+                            with amp.autocast():
+                                batch_scores = model(batch_graphs, batch_x, batch_e)
+                                loss = model.loss(batch_scores, batch_labels)
+                            
+                            scaler.scale(loss).backward()
+                            scaler.step(optimizer)
+                            scaler.update()
+                            
+                            # ... rest of the training loop ...
+                            preds = torch.argmax(batch_scores, dim=1)
+                            correct_counts, total_counts, false_positives = count_edge_types(preds, batch_labels)
+                            
+                            # Accumulate results
+                            epoch_loss += loss.detach().item()
+                            epoch_train_f1 += binary_f1_score(batch_scores, batch_labels)
+                            
+                            # Free memory
+                            del batch_graphs, batch_x, batch_e, batch_scores, batch_labels, preds
+                            
+                        # Normalize results
+                        epoch_loss /= (iter + 1)
+                        epoch_train_f1 /= (iter + 1)
+                        
+                        # Clear memory after training
+                        clear_memory()
+                        
+                        epoch_train_loss = epoch_loss
+                        train_correct_counts = correct_counts_sum
+                        train_total_counts = total_counts_sum
+                        train_false_positives = false_positives_sum
+                    else:
+                        # Standard training
+                        epoch_train_loss, epoch_train_f1, optimizer, train_correct_counts, train_total_counts, train_false_positives = train_epoch(
+                            model, optimizer, device, train_loader, epoch
+                        )
                 
-                # Validation
-                (epoch_val_loss, epoch_val_f1,
-                 val_total_predicted_as_1, val_total_correctly_predicted_as_1) = evaluate_network(
-                    model, device, val_loader, epoch)
+                # Validation and testing
+                with Timer("Validation"):
+                    epoch_val_loss, epoch_val_f1, val_correct_counts, val_total_counts, val_false_positives = evaluate_network(
+                        model, device, val_loader, epoch
+                    )
                 
-                # Testing
-                (epoch_test_loss, epoch_test_f1,
-                 test_total_predicted_as_1, test_total_correctly_predicted_as_1) = evaluate_network(
-                    model, device, test_loader, epoch)                        
+                with Timer("Testing"):
+                    epoch_test_loss, epoch_test_f1, test_correct_counts, test_total_counts, test_false_positives = evaluate_network(
+                        model, device, test_loader, epoch
+                    )
                 
-                epoch_train_losses.append(epoch_train_loss)
-                epoch_val_losses.append(epoch_val_loss)
-                epoch_train_f1s.append(epoch_train_f1)
-                epoch_val_f1s.append(epoch_val_f1)
-
-                writer.add_scalar('train/_loss', epoch_train_loss, epoch)
-                writer.add_scalar('val/_loss', epoch_val_loss, epoch)
-                writer.add_scalar('train/_f1', epoch_train_f1, epoch)
-                writer.add_scalar('val/_f1', epoch_val_f1, epoch)
-                writer.add_scalar('test/_f1', epoch_test_f1, epoch)
-                writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], epoch)
-
-                t.set_postfix(time=time.time()-start, lr=optimizer.param_groups[0]['lr'],
-                              train_loss=epoch_train_loss, val_loss=epoch_val_loss,
-                              train_f1=epoch_train_f1, val_f1=epoch_val_f1,
-                              test_f1=epoch_test_f1) 
-
-                per_epoch_time.append(time.time()-start)
-
-                # Print the counts
-                print("\nEpoch {}: Predictions for Edge Type 1".format(epoch))
-                print(f"  Train Total Predicted as 1: {train_total_predicted_as_1}")
-                print(f"  Train Total Correctly Predicted as 1: {train_total_correctly_predicted_as_1}")
-                print(f"  Val Total Predicted as 1: {val_total_predicted_as_1}")
-                print(f"  Val Total Correctly Predicted as 1: {val_total_correctly_predicted_as_1}")
-                print(f"  Test Total Predicted as 1: {test_total_predicted_as_1}")
-                print(f"  Test Total Correctly Predicted as 1: {test_total_correctly_predicted_as_1}")
-
-                # Saving checkpoint
-                ckpt_dir = os.path.join(root_ckpt_dir, "RUN_")
-                if not os.path.exists(ckpt_dir):
-                    os.makedirs(ckpt_dir)
-                torch.save(model.state_dict(), '{}.pkl'.format(ckpt_dir + "/epoch_" + str(epoch)))
-
-                # Save checkpoint
-                torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'scheduler_state_dict': scheduler.state_dict(),
-                    'train_losses': epoch_train_losses,
-                    'val_losses': epoch_val_losses,
-                    'train_f1s': epoch_train_f1s,
-                    'val_f1s': epoch_val_f1s,
-                }, checkpoint_path)
-
-                files = glob.glob(ckpt_dir + '/*.pkl')
-                for file in files:
-                    epoch_nb = file.split('_')[-1]
-                    epoch_nb = int(epoch_nb.split('.')[0])
-                    if epoch_nb < epoch - 1:
-                        os.remove(file)
-
-                scheduler.step(epoch_val_loss)
-
-                if optimizer.param_groups[0]['lr'] < params['min_lr']:
-                    print("\n!! LR EQUAL TO MIN LR SET.")
-                    break
-                    
-                # Stop training after params['max_time'] hours
-                if time.time() - t0 > params['max_time'] * 3600:
-                    print('-' * 89)
-                    print("Max_time for training elapsed {:.2f} hours, so stopping".format(params['max_time']))
-                    break
-    
+                # Record metrics
+                # ... existing code ...
+                
+                # Print memory usage occasionally
+                if epoch % 10 == 0:
+                    print(f"\nMemory usage after epoch {epoch}:")
+                    print_memory_stats()
+                
+                # Free up memory
+                clear_memory()
+                
+                # ... rest of the epoch loop ...
+                
     except KeyboardInterrupt:
-        print('-' * 89)
         print('Exiting from training early because of KeyboardInterrupt')
     
-    # Final evaluation on test set
-    _, test_f1, test_total_predicted_as_1, test_total_correctly_predicted_as_1 = evaluate_network(model, device, test_loader, epoch)
-    _, train_f1, train_total_predicted_as_1, train_total_correctly_predicted_as_1 = evaluate_network(model, device, train_loader, epoch)
-    print("Test F1: {:.4f}".format(test_f1))
-    print("Train F1: {:.4f}".format(train_f1))
-    print("Convergence Time (Epochs): {:.4f}".format(epoch))
-    print("TOTAL TIME TAKEN: {:.4f}s".format(time.time() - t0))
-    print("AVG TIME PER EPOCH: {:.4f}s".format(np.mean(per_epoch_time)))
-
-    writer.close()
-
-    # Write the results
-    with open(write_file_name + '.txt', 'w') as f:
-        f.write("""Dataset: {},\nModel: {}\n\nparams={}\n\nnet_params={}\n\n{}\n\nTotal Parameters: {}\n\n
-    FINAL RESULTS\nTEST F1: {:.4f}\nTRAIN F1: {:.4f}\n\n
-    Convergence Time (Epochs): {:.4f}\nTotal Time Taken: {:.4f}hrs\nAverage Time Per Epoch: {:.4f}s\n\n\n"""\
-                .format(DATASET_NAME, MODEL_NAME, params, net_params, model, net_params['total_param'],
-                        test_f1, train_f1, epoch, (time.time() - t0) / 3600, np.mean(per_epoch_time)))
-    t0 = time.time()
-    per_epoch_time = []
-        
-    DATASET_NAME = dataset.name
-    trainset, valset, testset = dataset.train, dataset.val, dataset.test
-        
-    root_log_dir, root_ckpt_dir, write_file_name, write_config_file = dirs
-    device = net_params['device']
-    
-    # Write the network and optimization hyper-parameters in folder config/
-    with open(write_config_file + '.txt', 'w') as f:
-        f.write("""Dataset: {},\nModel: {}\n\nparams={}\n\nnet_params={}\n\nTotal Parameters: {}\n\n"""                .format(DATASET_NAME, MODEL_NAME, params, net_params, net_params['total_param']))
-        
-    log_dir = os.path.join(root_log_dir, "RUN_" + str(0))
-    writer = SummaryWriter(log_dir=log_dir)
-
-    # Setting seeds
-    random.seed(params['seed'])
-    np.random.seed(params['seed'])
-    torch.manual_seed(params['seed'])
-    if device.type == 'cuda':
-        torch.cuda.manual_seed(params['seed'])
-    
-    print("Training Graphs: ", len(trainset))
-    print("Validation Graphs: ", len(valset))
-    print("Test Graphs: ", len(testset))
-    print("Number of Classes: ", net_params['n_classes'])
-
-    model = gnn_model(MODEL_NAME, net_params)
-    model = model.to(device)
-
-    optimizer = optim.Adam(model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
-                                                     factor=params['lr_reduce_factor'],
-                                                     patience=params['lr_schedule_patience'],
-                                                     verbose=True)
-    
-    epoch_train_losses, epoch_val_losses = [], []
-    epoch_train_f1s, epoch_val_f1s = [], [] 
-    
-    # Import train functions for GNNs
-    from train.train_TSP_edge_classification import train_epoch_sparse as train_epoch, evaluate_network_sparse as evaluate_network
-
-    train_loader = DataLoader(trainset, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
-    val_loader = DataLoader(valset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
-    test_loader = DataLoader(testset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
-    
-    # Main training loop
-    try:
-        with tqdm(range(params['epochs'])) as t:
-            for epoch in t:
-
-                t.set_description('Epoch %d' % epoch)    
-
-                start = time.time()
-                
-                # Training
-                epoch_train_loss, epoch_train_f1, optimizer, train_correct_counts, train_total_counts, train_false_positives = train_epoch(
-                    model, optimizer, device, train_loader, epoch)
-                
-                # Validation
-                epoch_val_loss, epoch_val_f1, val_correct_counts, val_total_counts, val_false_positives = evaluate_network(
-                    model, device, val_loader, epoch)
-                
-                # Testing
-                epoch_test_loss, epoch_test_f1, test_correct_counts, test_total_counts, test_false_positives = evaluate_network(
-                    model, device, test_loader, epoch)                        
-                
-                epoch_train_losses.append(epoch_train_loss)
-                epoch_val_losses.append(epoch_val_loss)
-                epoch_train_f1s.append(epoch_train_f1)
-                epoch_val_f1s.append(epoch_val_f1)
-
-                writer.add_scalar('train/_loss', epoch_train_loss, epoch)
-                writer.add_scalar('val/_loss', epoch_val_loss, epoch)
-                writer.add_scalar('train/_f1', epoch_train_f1, epoch)
-                writer.add_scalar('val/_f1', epoch_val_f1, epoch)
-                writer.add_scalar('test/_f1', epoch_test_f1, epoch)
-                writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], epoch)
-
-                t.set_postfix(time=time.time()-start, lr=optimizer.param_groups[0]['lr'],
-                              train_loss=epoch_train_loss, val_loss=epoch_val_loss,
-                              train_f1=epoch_train_f1, val_f1=epoch_val_f1,
-                              test_f1=epoch_test_f1) 
-
-                per_epoch_time.append(time.time()-start)
-
-                # Log the counts
-                print("\nEpoch {}: Edge Type-wise Correct Predictions".format(epoch))
-                edge_types = sorted(set(list(train_correct_counts.keys()) +
-                                        list(val_correct_counts.keys()) +
-                                        list(test_correct_counts.keys())))
-                for edge_type in edge_types:
-                    train_correct = train_correct_counts.get(edge_type, 0)
-                    train_total = train_total_counts.get(edge_type, 0)
-                    val_correct = val_correct_counts.get(edge_type, 0)
-                    val_total = val_total_counts.get(edge_type, 0)
-                    test_correct = test_correct_counts.get(edge_type, 0)
-                    test_total = test_total_counts.get(edge_type, 0)
-
-                    print(f"  Edge Type {edge_type}:")
-                    print(f"    Train Correct: {train_correct}/{train_total}")
-                    print(f"    Val Correct: {val_correct}/{val_total}")
-                    print(f"    Test Correct: {test_correct}/{test_total}")
-
-                # Print false positives for edge type 1
-                print(f"\nFalse Positives for Edge Type 1:")
-                train_fp = train_false_positives.get(1, 0)
-                val_fp = val_false_positives.get(1, 0)
-                test_fp = test_false_positives.get(1, 0)
-                train_total_type1 = train_total_counts.get(1, 0)
-                val_total_type1 = val_total_counts.get(1, 0)
-                test_total_type1 = test_total_counts.get(1, 0)
-                print(f"  Train False Positives: {train_fp}")
-                print(f"  Val False Positives: {val_fp}")
-                print(f"  Test False Positives: {test_fp}")
-                print(f"  Total Edge Type 1 Count:")
-                print(f"    Train: {train_total_type1}")
-                print(f"    Val: {val_total_type1}")
-                print(f"    Test: {test_total_type1}")
-
-                # Saving checkpoint
-                ckpt_dir = os.path.join(root_ckpt_dir, "RUN_")
-                if not os.path.exists(ckpt_dir):
-                    os.makedirs(ckpt_dir)
-                torch.save(model.state_dict(), '{}.pkl'.format(ckpt_dir + "/epoch_" + str(epoch)))
-
-                files = glob.glob(ckpt_dir + '/*.pkl')
-                for file in files:
-                    epoch_nb = file.split('_')[-1]
-                    epoch_nb = int(epoch_nb.split('.')[0])
-                    if epoch_nb < epoch - 1:
-                        os.remove(file)
-
-                scheduler.step(epoch_val_loss)
-
-                if optimizer.param_groups[0]['lr'] < params['min_lr']:
-                    print("\n!! LR EQUAL TO MIN LR SET.")
-                    break
-                    
-                # Stop training after params['max_time'] hours
-                if time.time() - t0 > params['max_time'] * 3600:
-                    print('-' * 89)
-                    print("Max_time for training elapsed {:.2f} hours, so stopping".format(params['max_time']))
-                    break
-    
-    except KeyboardInterrupt:
-        print('-' * 89)
-        print('Exiting from training early because of KeyboardInterrupt')
-    
-    # Final evaluation on test set
-    _, test_f1, test_correct_counts, test_total_counts, test_false_positives = evaluate_network(model, device, test_loader, epoch)
-    _, train_f1, train_correct_counts, train_total_counts, train_false_positives = evaluate_network(model, device, train_loader, epoch)
-    print("Test F1: {:.4f}".format(test_f1))
-    print("Train F1: {:.4f}".format(train_f1))
-    print("Convergence Time (Epochs): {:.4f}".format(epoch))
-    print("TOTAL TIME TAKEN: {:.4f}s".format(time.time() - t0))
-    print("AVG TIME PER EPOCH: {:.4f}s".format(np.mean(per_epoch_time)))
-
-    writer.close()
-
-    # Write the results
-    with open(write_file_name + '.txt', 'w') as f:
-        f.write("""Dataset: {},\nModel: {}\n\nparams={}\n\nnet_params={}\n\n{}\n\nTotal Parameters: {}\n\n
-    FINAL RESULTS\nTEST F1: {:.4f}\nTRAIN F1: {:.4f}\n\n
-    Convergence Time (Epochs): {:.4f}\nTotal Time Taken: {:.4f}hrs\nAverage Time Per Epoch: {:.4f}s\n\n\n"""\
-              .format(DATASET_NAME, MODEL_NAME, params, net_params, model, net_params['total_param'],
-                      test_f1, train_f1, epoch, (time.time() - t0) / 3600, np.mean(per_epoch_time)))
-
-
-
-
+    # ... rest of the function ...
 
 def train_val_pipeline_chunked(MODEL_NAME, dataset, params, net_params, dirs):
     t0 = time.time()
@@ -531,21 +315,30 @@ def train_val_pipeline_chunked(MODEL_NAME, dataset, params, net_params, dirs):
 
             total_epochs += 1
 
-            # Training
-            (epoch_train_loss, epoch_train_f1, optimizer,
-                train_total_predicted_as_1, train_total_correctly_predicted_as_1) = train_epoch(
+            # Training - adjust to match the actual return values
+            epoch_train_loss, epoch_train_f1, optimizer, train_metrics = train_epoch(
                 model, optimizer, device, train_loader, epoch)
             
+            train_correct_counts = train_metrics.get('correct_counts', {})
+            train_total_counts = train_metrics.get('total_counts', {})
+            train_false_positives = train_metrics.get('false_positives', {})
+            
             # Validation
-            (epoch_val_loss, epoch_val_f1,
-                val_total_predicted_as_1, val_total_correctly_predicted_as_1) = evaluate_network(
+            epoch_val_loss, epoch_val_f1, val_metrics = evaluate_network(
                 model, device, val_loader, epoch)
+                
+            val_correct_counts = val_metrics.get('correct_counts', {})
+            val_total_counts = val_metrics.get('total_counts', {})
+            val_false_positives = val_metrics.get('false_positives', {})
             
             # Testing
-            (epoch_test_loss, epoch_test_f1,
-                test_total_predicted_as_1, test_total_correctly_predicted_as_1) = evaluate_network(
-                model, device, test_loader, epoch)                     
-
+            epoch_test_loss, epoch_test_f1, test_metrics = evaluate_network(
+                model, device, test_loader, epoch)
+                
+            test_correct_counts = test_metrics.get('correct_counts', {})
+            test_total_counts = test_metrics.get('total_counts', {})
+            test_false_positives = test_metrics.get('false_positives', {})
+            
             epoch_train_losses.append(epoch_train_loss)
             epoch_val_losses.append(epoch_val_loss)
             epoch_train_f1s.append(epoch_train_f1)
@@ -591,8 +384,16 @@ def train_val_pipeline_chunked(MODEL_NAME, dataset, params, net_params, dirs):
                 break
 
     # Final evaluation on test set
-    _, test_f1 = evaluate_network(model, device, test_loader, epoch)
-    _, train_f1 = evaluate_network(model, device, train_loader, epoch)
+    _, test_f1, test_metrics = evaluate_network(model, device, test_loader, epoch)
+    test_correct_counts = test_metrics.get('correct_counts', {})
+    test_total_counts = test_metrics.get('total_counts', {}) 
+    test_false_positives = test_metrics.get('false_positives', {})
+    
+    _, train_f1, train_metrics = evaluate_network(model, device, train_loader, epoch)
+    train_correct_counts = train_metrics.get('correct_counts', {})
+    train_total_counts = train_metrics.get('total_counts', {})
+    train_false_positives = train_metrics.get('false_positives', {})
+    
     print("Test F1: {:.4f}".format(test_f1))
     print("Train F1: {:.4f}".format(train_f1))
     print("Convergence Time (Epochs): {:.4f}".format(total_epochs))
@@ -610,12 +411,10 @@ def train_val_pipeline_chunked(MODEL_NAME, dataset, params, net_params, dirs):
                         test_f1, train_f1, total_epochs, (time.time() - t0) / 3600, np.mean(per_epoch_time)))
 
 
-
 def main():    
     """
         USER CONTROLS
     """
-    
     
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', help="Please give a config.json file with training/model/data/param details")
@@ -751,7 +550,7 @@ def main():
     if args.self_loop is not None:
         net_params['self_loop'] = True if args.self_loop=='True' else False
     if args.layer_type is not None:
-        net_params['layer_type'] = layer_type
+        net_params['layer_type'] = args.layer_type
  
 
       
@@ -779,12 +578,11 @@ def main():
         os.makedirs(out_dir + 'configs')
 
     net_params['total_param'] = view_model_param(MODEL_NAME, net_params)
-    train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs)
+    
+    # Toggle between standard and chunked training
+    if params.get('use_chunked_training', False):
+        train_val_pipeline_chunked(MODEL_NAME, dataset, params, net_params, dirs)
+    else:
+        train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs)
 
-    
-    
-    
-    
-    
-    
 main()

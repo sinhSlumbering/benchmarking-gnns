@@ -9,6 +9,29 @@ import dgl
 
 from train.metrics import binary_f1_score
 
+def count_edge_types(preds, labels):
+    """Helper function to count correct predictions and totals for each edge type"""
+    correct_counts = {}
+    total_counts = {}
+    false_positives = {}
+    
+    for i in range(len(labels)):
+        label = int(labels[i])
+        pred = int(preds[i])
+        
+        # Count total occurrences
+        total_counts[label] = total_counts.get(label, 0) + 1
+        
+        # Count correct predictions
+        if pred == label:
+            correct_counts[label] = correct_counts.get(label, 0) + 1
+            
+        # Count false positives (predicted 1 when actual was 0)
+        if pred == 1 and label == 0:
+            false_positives[1] = false_positives.get(1, 0) + 1
+            
+    return correct_counts, total_counts, false_positives
+
 """
     For GCNs
 """
@@ -16,10 +39,12 @@ def train_epoch_sparse(model, optimizer, device, data_loader, epoch):
     model.train()
     epoch_loss = 0
     epoch_train_f1 = 0
-
-    # Initialize counts
-    total_predicted_as_1 = 0
-    total_correctly_predicted_as_1 = 0
+    nb_data = 0
+    gpu_mem = 0
+    
+    correct_counts_sum = {}
+    total_counts_sum = {}
+    false_positives_sum = {}
 
     for iter, (batch_graphs, batch_labels) in enumerate(data_loader):
         batch_graphs = batch_graphs.to(device)
@@ -35,32 +60,35 @@ def train_epoch_sparse(model, optimizer, device, data_loader, epoch):
         epoch_loss += loss.detach().item()
         epoch_train_f1 += binary_f1_score(batch_scores, batch_labels)
 
-        # Compute predictions
+        # Get predictions
         preds = torch.argmax(batch_scores, dim=1)
-        labels = batch_labels
-
-        # Compute total number of edges predicted as type 1
-        predicted_as_1 = (preds == 1)
-        total_predicted_as_1 += predicted_as_1.sum().item()
-
-        # Compute total number of correctly predicted edges as type 1
-        correctly_predicted_as_1 = ((preds == 1) & (labels == 1))
-        total_correctly_predicted_as_1 += correctly_predicted_as_1.sum().item()
+        
+        # Count edge types for this batch
+        correct_counts, total_counts, false_positives = count_edge_types(preds, batch_labels)
+        
+        # Accumulate counts across batches
+        for k, v in correct_counts.items():
+            correct_counts_sum[k] = correct_counts_sum.get(k, 0) + v
+        for k, v in total_counts.items():
+            total_counts_sum[k] = total_counts_sum.get(k, 0) + v
+        for k, v in false_positives.items():
+            false_positives_sum[k] = false_positives_sum.get(k, 0) + v
 
     epoch_loss /= (iter + 1)
     epoch_train_f1 /= (iter + 1)
     
-    return epoch_loss, epoch_train_f1, optimizer, total_predicted_as_1, total_correctly_predicted_as_1
+    return epoch_loss, epoch_train_f1, optimizer, correct_counts_sum, total_counts_sum, false_positives_sum
 
 
 def evaluate_network_sparse(model, device, data_loader, epoch):
     model.eval()
     epoch_test_loss = 0
     epoch_test_f1 = 0
-
-    # Initialize counts
-    total_predicted_as_1 = 0
-    total_correctly_predicted_as_1 = 0
+    nb_data = 0
+    
+    correct_counts_sum = {}
+    total_counts_sum = {}
+    false_positives_sum = {}
 
     with torch.no_grad():
         for iter, (batch_graphs, batch_labels) in enumerate(data_loader):
@@ -74,22 +102,24 @@ def evaluate_network_sparse(model, device, data_loader, epoch):
             epoch_test_loss += loss.detach().item()
             epoch_test_f1 += binary_f1_score(batch_scores, batch_labels)
 
-            # Compute predictions
+            # Get predictions
             preds = torch.argmax(batch_scores, dim=1)
-            labels = batch_labels
-
-            # Compute total number of edges predicted as type 1
-            predicted_as_1 = (preds == 1)
-            total_predicted_as_1 += predicted_as_1.sum().item()
-
-            # Compute total number of correctly predicted edges as type 1
-            correctly_predicted_as_1 = ((preds == 1) & (labels == 1))
-            total_correctly_predicted_as_1 += correctly_predicted_as_1.sum().item()
-
+            
+            # Count edge types for this batch
+            correct_counts, total_counts, false_positives = count_edge_types(preds, batch_labels)
+            
+            # Accumulate counts across batches
+            for k, v in correct_counts.items():
+                correct_counts_sum[k] = correct_counts_sum.get(k, 0) + v
+            for k, v in total_counts.items():
+                total_counts_sum[k] = total_counts_sum.get(k, 0) + v
+            for k, v in false_positives.items():
+                false_positives_sum[k] = false_positives_sum.get(k, 0) + v
+                
     epoch_test_loss /= (iter + 1)
     epoch_test_f1 /= (iter + 1)
     
-    return epoch_test_loss, epoch_test_f1, total_predicted_as_1, total_correctly_predicted_as_1
+    return epoch_test_loss, epoch_test_f1, correct_counts_sum, total_counts_sum, false_positives_sum
 
 
 """

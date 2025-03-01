@@ -1,0 +1,39 @@
+{
+    "gpu": {
+        "use": true,
+        "id": 0
+    },
+    "model": "GatedGCN",
+    "dataset": "TSP",
+    "out_dir": "out/",
+    "params": {
+        "seed": 41,
+        "epochs": 500,
+        "batch_size": 64,
+        "init_lr": 0.001,
+        "lr_reduce_factor": 0.5,
+        "lr_schedule_patience": 5,
+        "min_lr": 1e-06,
+        "weight_decay": 0.0,
+        "print_epoch_interval": 5,
+        "max_time": 24,
+        "use_chunked_training": true,
+        "chunk_size": 500,
+        "epochs_per_chunk": 2,
+        "num_workers": 4,
+        "pin_memory": true,
+        "use_amp": true
+    },
+    "net_params": {
+        "L": 4,
+        "hidden_dim": 64,
+        "out_dim": 64,
+        "residual": true,
+        "edge_feat": true,
+        "readout": "mean",
+        "in_feat_dropout": 0.0,
+        "dropout": 0.0,
+        "batch_norm": true,
+        "layer_type": "edgereprfeat"
+    }
+}
