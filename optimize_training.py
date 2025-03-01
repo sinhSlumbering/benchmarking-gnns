@@ -16,6 +16,7 @@ def print_memory_stats():
     if torch.cuda.is_available():
         print(f"GPU Memory allocated: {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
         print(f"GPU Memory cached: {torch.cuda.memory_reserved() / 1024**2:.2f} MB")
+        print(f"Max GPU memory allocated: {torch.cuda.max_memory_allocated() / 1e9:.2f} GB")
 
 def clear_memory():
     """Clear unused memory"""
@@ -35,3 +36,4 @@ class Timer:
     def __exit__(self, *args):
         elapsed = time.time() - self.start_time
         print(f"{self.name} took {elapsed:.4f} seconds")
+        print(f"[TIMING] {self.name}: {elapsed:.4f} seconds")

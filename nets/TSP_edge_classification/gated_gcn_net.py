@@ -52,7 +52,7 @@ class GatedGCNNet(nn.Module):
         
         h = self.embedding_h(h.float())
         if not self.edge_feat:
-            e = torcg.ones_like(e).to(self.device)
+            e = torch.ones_like(e).to(self.device)
         e = self.embedding_e(e.float())
         
         # convnets
