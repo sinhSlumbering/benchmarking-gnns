@@ -12,8 +12,9 @@ import logging
 import psutil
 import os
 
+
 class TSP(Dataset):
-    def __init__(self, data_dir, split="train", num_neighbors=99, max_samples=100000, num_workers=None):    
+    def __init__(self, data_dir, split="train", num_neighbors=99, max_samples=100000, num_workers=None):
         self.data_dir = data_dir
         self.split = split
         self.filename = f'{data_dir}/tsp100-100_{split}.txt'
@@ -21,21 +22,22 @@ class TSP(Dataset):
         self.num_neighbors = num_neighbors
         self.is_test = split.lower() in ['test', 'val']
         self.num_workers = num_workers if num_workers else cpu_count()
-        
+
         self.graph_lists = []
         self.edge_labels = []
         self._prepare()
         self.n_samples = len(self.edge_labels)
 
     def _prepare(self):
-        logging.info('Preparing graphs for the %s set using %d workers...' % (self.split.upper(), self.num_workers))
-        
+        logging.info('Preparing graphs for the %s set using %d workers...' % (
+            self.split.upper(), self.num_workers))
+
         start_time = time.time()
 
         # Read all lines from the file
         with open(self.filename, "r") as f:
             file_data = f.readlines()[:self.max_samples]
-        
+
         num_lines = len(file_data)
         logging.info(f"Total graphs to process: {num_lines}")
 
@@ -51,7 +53,8 @@ class TSP(Dataset):
 
         # Collect the graphs after processing
         logging.info("Collecting processed graphs...")
-        graph_files = sorted(os.listdir(temp_dir), key=lambda x: int(x.split('_')[1].split('.')[0]))
+        graph_files = sorted(os.listdir(temp_dir), key=lambda x: int(
+            x.split('_')[1].split('.')[0]))
 
         for graph_file in tqdm(graph_files, desc="Loading graphs"):
             with open(os.path.join(temp_dir, graph_file), 'rb') as f:
@@ -63,12 +66,14 @@ class TSP(Dataset):
         import shutil
         shutil.rmtree(temp_dir)
 
-        logging.info(f"Processed {len(self.graph_lists)} graphs in {time.time() - start_time:.2f} seconds.")
+        logging.info(f"Processed {len(self.graph_lists)} graphs in {
+                     time.time() - start_time:.2f} seconds.")
 
         # Log memory usage
         process = psutil.Process()
         mem_info = process.memory_info()
-        logging.info(f"Memory Usage after processing {self.split} set: {mem_info.rss / (1024 ** 2):.2f} MB")
+        logging.info(f"Memory Usage after processing {self.split} set: {
+                     mem_info.rss / (1024 ** 2):.2f} MB")
 
     def _process_line(self, args):
         index, line = args
@@ -77,12 +82,14 @@ class TSP(Dataset):
 
         # Node coordinates
         nodes_coord = np.array(
-            [[float(line[idx]), float(line[idx + 1])] for idx in range(0, 2 * num_nodes, 2)],
+            [[float(line[idx]), float(line[idx + 1])]
+             for idx in range(0, 2 * num_nodes, 2)],
             dtype=np.float32
         )
 
         # Compute k-nearest neighbors using efficient methods
-        nn = NearestNeighbors(n_neighbors=self.num_neighbors + 1, metric='euclidean')
+        nn = NearestNeighbors(
+            n_neighbors=self.num_neighbors + 1, metric='euclidean')
         nn.fit(nodes_coord)
         distances, knns = nn.kneighbors(nodes_coord)
 
@@ -91,7 +98,8 @@ class TSP(Dataset):
         distances = distances[:, 1:]
 
         # Tour nodes
-        tour_nodes = np.array([int(node) - 1 for node in line[line.index('output') + 1:-1]], dtype=np.int32)
+        tour_nodes = np.array(
+            [int(node) - 1 for node in line[line.index('output') + 1:-1]], dtype=np.int32)
 
         # Edge adjacency matrix representation of tour
         edges_target = np.zeros((num_nodes, num_nodes), dtype=np.int32)
@@ -156,7 +164,7 @@ class TSP(Dataset):
 
     def __getitem__(self, idx):
         """
-            Get the idx^th sample.
+           Get the idx^th sample.
             Returns
             -------
             (dgl.DGLGraph, list)
@@ -164,8 +172,6 @@ class TSP(Dataset):
                 And a list of labels for each edge in the DGLGraph.
         """
         return self.graph_lists[idx], self.edge_labels[idx]
-    
-
 
 
 #################################
@@ -201,7 +207,7 @@ class TSP(Dataset):
 #         print('train, val, test sizes:', len(self.train), len(self.val), len(self.test))
 #         print("[I] Finished loading.")
 #         print("[I] Data load time: {:.4f}s".format(time.time() - start))
-        
+
 #     def _load_split(self, split):
 #         split_pkl_file = os.path.join(self.data_dir, f'{self.name}_{split}.pkl')
 #         if not os.path.exists(split_pkl_file):
@@ -244,6 +250,7 @@ class EdgeClassificationDataset(Dataset):
         batched_graph = dgl.batch(graphs)
         return batched_graph, labels
 
+
 class TSPDataset:
     def __init__(self, data_dir, name="TSP"):
         start = time.time()
@@ -252,7 +259,8 @@ class TSPDataset:
         self.data_dir = 'data/TSP/'  # e.g., 'data/TSP/'
         combined_pkl_file = os.path.join(self.data_dir, f'{self.name}.pkl')
         if not os.path.exists(combined_pkl_file):
-            raise FileNotFoundError(f"Pickle file {combined_pkl_file} not found.")
+            raise FileNotFoundError(
+                f"Pickle file {combined_pkl_file} not found.")
         with open(combined_pkl_file, 'rb') as f:
             print(f)
             datasets = pickle.load(f)
@@ -268,7 +276,8 @@ class TSPDataset:
         self.train = EdgeClassificationDataset(*train_data)
         self.val = EdgeClassificationDataset(*val_data)
         self.test = EdgeClassificationDataset(*test_data)
-        print('Train, Val, Test sizes:', len(self.train), len(self.val), len(self.test))
+        print('Train, Val, Test sizes:', len(
+            self.train), len(self.val), len(self.test))
         print("[I] Finished loading.")
         print("[I] Data load time: {:.4f}s".format(time.time() - start))
 

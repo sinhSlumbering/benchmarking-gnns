@@ -3,3 +3,5 @@ cp tsp100-100_train/tsp100-100_train.txt data/
 cp tsp100-100_val/tsp100-100_val.txt data/
 
 python data/TSP/TSP_Prepare.py
+
+cp data/TSP.pkl data/TSP

@@ -12,6 +12,8 @@ from train.metrics import binary_f1_score
 """
     For GCNs
 """
+
+
 def train_epoch_sparse(model, optimizer, device, data_loader, epoch):
     model.train()
     epoch_loss = 0
@@ -27,7 +29,7 @@ def train_epoch_sparse(model, optimizer, device, data_loader, epoch):
         batch_e = batch_graphs.edata['feat'].to(device)  # Edge features
         batch_labels = batch_labels.to(device)  # Edge labels
         optimizer.zero_grad()
-        
+
         batch_scores = model.forward(batch_graphs, batch_x, batch_e)
         loss = model.loss(batch_scores, batch_labels)
         loss.backward()
@@ -49,7 +51,7 @@ def train_epoch_sparse(model, optimizer, device, data_loader, epoch):
 
     epoch_loss /= (iter + 1)
     epoch_train_f1 /= (iter + 1)
-    
+
     return epoch_loss, epoch_train_f1, optimizer, total_predicted_as_1, total_correctly_predicted_as_1
 
 
@@ -70,7 +72,7 @@ def evaluate_network_sparse(model, device, data_loader, epoch):
             batch_labels = batch_labels.to(device)
 
             batch_scores = model.forward(batch_graphs, batch_x, batch_e)
-            loss = model.loss(batch_scores, batch_labels) 
+            loss = model.loss(batch_scores, batch_labels)
             epoch_test_loss += loss.detach().item()
             epoch_test_f1 += binary_f1_score(batch_scores, batch_labels)
 
@@ -88,13 +90,15 @@ def evaluate_network_sparse(model, device, data_loader, epoch):
 
     epoch_test_loss /= (iter + 1)
     epoch_test_f1 /= (iter + 1)
-    
+
     return epoch_test_loss, epoch_test_f1, total_predicted_as_1, total_correctly_predicted_as_1
 
 
 """
     For WL-GNNs
 """
+
+
 def train_epoch_dense(model, optimizer, device, data_loader, epoch, batch_size):
 
     model.train()
@@ -110,25 +114,25 @@ def train_epoch_dense(model, optimizer, device, data_loader, epoch, batch_size):
             x_with_edge_feat = x_with_edge_feat.to(device)
         labels = labels.to(device)
         edge_list = edge_list[0].to(device), edge_list[1].to(device)
-        
+
         scores = model.forward(x_no_edge_feat, x_with_edge_feat, edge_list)
         loss = model.loss(scores, labels)
         loss.backward()
-        
-        if not (iter%batch_size):
+
+        if not (iter % batch_size):
             optimizer.step()
             optimizer.zero_grad()
-        
+
         epoch_loss += loss.detach().item()
         epoch_train_f1 += binary_f1_score(scores, labels)
     epoch_loss /= (iter + 1)
     epoch_train_f1 /= (iter + 1)
-    
+
     return epoch_loss, epoch_train_f1, optimizer
 
 
 def evaluate_network_dense(model, device, data_loader, epoch):
-    
+
     model.eval()
     epoch_test_loss = 0
     epoch_test_f1 = 0
@@ -143,10 +147,10 @@ def evaluate_network_dense(model, device, data_loader, epoch):
             edge_list = edge_list[0].to(device), edge_list[1].to(device)
 
             scores = model.forward(x_no_edge_feat, x_with_edge_feat, edge_list)
-            loss = model.loss(scores, labels) 
+            loss = model.loss(scores, labels)
             epoch_test_loss += loss.detach().item()
             epoch_test_f1 += binary_f1_score(scores, labels)
         epoch_test_loss /= (iter + 1)
         epoch_test_f1 /= (iter + 1)
-        
+
     return epoch_test_loss, epoch_test_f1

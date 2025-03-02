@@ -2,9 +2,9 @@
 
 # Array of node counts and corresponding training sample sizes
 declare -A node_samples=(
-    [100]=10000
-    [200]=10000
-    [500]=5000
+    [100]=1000
+#    [200]=1000
+#    [500]=5000
 #    [1000]=1000
 #    [10000]=500
 )
@@ -60,5 +60,7 @@ for nodes in "${!node_samples[@]}"; do
 done
 rm *.res
 rm *.sol
+rm *.pul
+rm *.sav
 
 echo "Finished generating all datasets."
