@@ -14,14 +14,15 @@ import os
 
 
 class TSP(Dataset):
-    def __init__(self, data_dir, split="train", num_neighbors=99, max_samples=100000, num_workers=None):
+    def __init__(self, data_dir, split="train", graph_size=100, num_neighbors=99, max_samples=100000, num_workers=None):
         self.data_dir = data_dir
         self.split = split
-        self.filename = f'{data_dir}/tsp100-100_{split}.txt'
+        self.filename = f'{data_dir}/tsp{graph_size}-{graph_size}_{split}.txt'
         self.max_samples = max_samples
         self.num_neighbors = num_neighbors
         self.is_test = split.lower() in ['test', 'val']
         self.num_workers = num_workers if num_workers else cpu_count()
+        self.graph_size = graph_size
 
         self.graph_lists = []
         self.edge_labels = []

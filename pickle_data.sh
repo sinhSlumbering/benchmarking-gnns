@@ -1,7 +1,9 @@
-cp tsp100-100_test/tsp100-100_test.txt data/
-cp tsp100-100_train/tsp100-100_train.txt data/
-cp tsp100-100_val/tsp100-100_val.txt data/
+size=100
 
-python data/TSP/TSP_Prepare.py
+cp "tsp${size}-${size}_test/tsp${size}-${size}_test.txt" data/
+cp "tsp${size}-${size}_train/tsp${size}-${size}_train.txt" data/
+cp "tsp${size}-${size}_val/tsp${size}-${size}_val.txt" data/
+
+python data/TSP/TSP_Prepare.py --graph_size "${size}"
 
 cp data/TSP.pkl data/TSP

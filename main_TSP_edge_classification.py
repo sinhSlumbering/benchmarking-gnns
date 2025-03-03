@@ -119,6 +119,11 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
 
     epoch_train_losses, epoch_val_losses = [], []
     epoch_train_f1s, epoch_val_f1s = [], []
+    
+    # Track best validation F1 score and corresponding model
+    best_val_f1 = 0
+    best_model = None
+    best_epoch = 0
 
     # Import train functions for GNNs
     from train.train_TSP_edge_classification import train_epoch_sparse as train_epoch, evaluate_network_sparse as evaluate_network
@@ -197,18 +202,12 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
 
                 # Print the counts
                 print("\nEpoch {}: Predictions for Edge Type 1".format(epoch))
-                print(f"  Train Total Predicted as 1: {
-                      train_total_predicted_as_1}")
-                print(f"  Train Total Correctly Predicted as 1: {
-                      train_total_correctly_predicted_as_1}")
-                print(f"  Val Total Predicted as 1: {
-                      val_total_predicted_as_1}")
-                print(f"  Val Total Correctly Predicted as 1: {
-                      val_total_correctly_predicted_as_1}")
-                print(f"  Test Total Predicted as 1: {
-                      test_total_predicted_as_1}")
-                print(f"  Test Total Correctly Predicted as 1: {
-                      test_total_correctly_predicted_as_1}")
+                print(f"  Train Total Predicted as 1: {train_total_predicted_as_1}")
+                print(f"  Train Total Correctly Predicted as 1: {train_total_correctly_predicted_as_1}")
+                print(f"  Val Total Predicted as 1: {val_total_predicted_as_1}")
+                print(f"  Val Total Correctly Predicted as 1: {val_total_correctly_predicted_as_1}")
+                print(f"  Test Total Predicted as 1: {test_total_predicted_as_1}")
+                print(f"  Test Total Correctly Predicted as 1: {test_total_correctly_predicted_as_1}")
 
                 # Saving checkpoint
                 ckpt_dir = os.path.join(root_ckpt_dir, "RUN_")
@@ -216,6 +215,15 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
                     os.makedirs(ckpt_dir)
                 torch.save(model.state_dict(), '{}.pkl'.format(
                     ckpt_dir + "/epoch_" + str(epoch)))
+
+                # Track best model based on validation F1 score
+                if epoch_val_f1 > best_val_f1:
+                    best_val_f1 = epoch_val_f1
+                    best_model = model.state_dict().copy()
+                    best_epoch = epoch
+                    # Save the best model separately
+                    torch.save(best_model, 'best_model.pkl')
+                    print(f"New best model saved at epoch {epoch} with validation F1: {best_val_f1:.4f}")
 
                 files = glob.glob(ckpt_dir + '/*.pkl')
                 for file in files:
@@ -241,6 +249,11 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
         print('-' * 89)
         print('Exiting from training early because of KeyboardInterrupt')
 
+    # Load the best model for final evaluation
+    if best_model is not None:
+        model.load_state_dict(best_model)
+        print(f"Loaded best model from epoch {best_epoch} for final evaluation")
+
     # Final evaluation on test set
     _, test_f1, test_total_predicted_as_1, test_total_correctly_predicted_as_1 = evaluate_network(
         model, device, test_loader, epoch)
@@ -251,6 +264,18 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
     print("Convergence Time (Epochs): {:.4f}".format(epoch))
     print("TOTAL TIME TAKEN: {:.4f}s".format(time.time() - t0))
     print("AVG TIME PER EPOCH: {:.4f}s".format(np.mean(per_epoch_time)))
+    
+    # Save model configuration along with the best model for inference
+    model_info = {
+        'model_name': MODEL_NAME,
+        'net_params': net_params,
+        'best_val_f1': best_val_f1,
+        'best_epoch': best_epoch,
+        'test_f1': test_f1
+    }
+    
+    with open('best_model_info.pkl', 'wb') as f:
+        pickle.dump(model_info, f)
 
     writer.close()
 
@@ -258,9 +283,12 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
     with open(write_file_name + '.txt', 'w') as f:
         f.write("""Dataset: {},\nModel: {}\n\nparams={}\n\nnet_params={}\n\n{}\n\nTotal Parameters: {}\n\n
     FINAL RESULTS\nTEST F1: {:.4f}\nTRAIN F1: {:.4f}\n\n
+    Best Validation F1: {:.4f} (Epoch {})\n
     Convergence Time (Epochs): {:.4f}\nTotal Time Taken: {:.4f}hrs\nAverage Time Per Epoch: {:.4f}s\n\n\n"""
                 .format(DATASET_NAME, MODEL_NAME, params, net_params, model, net_params['total_param'],
-                        test_f1, train_f1, epoch, (time.time() - t0) / 3600, np.mean(per_epoch_time)))
+                        test_f1, train_f1, best_val_f1, best_epoch, epoch, (time.time() - t0) / 3600, np.mean(per_epoch_time)))
+                
+    return model_info
 
 
 def main():
@@ -454,7 +482,9 @@ def main():
         os.makedirs(out_dir + 'configs')
 
     net_params['total_param'] = view_model_param(MODEL_NAME, net_params)
-    train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs)
+    model_info = train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs)
+    
+    print(f"\nBest model saved to current directory with validation F1: {model_info['best_val_f1']:.4f}")
 
 
 main()
