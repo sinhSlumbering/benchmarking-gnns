@@ -28,6 +28,44 @@ python inference.py --graph_path path/to/your/graph.gpickle --output_path sparsi
 - `--output_path`: Where to save the sparsified graph (default: `sparsified_graph.gpickle`)
 - `--threshold`: Probability threshold for keeping edges (default: 0.5)
 - `--gpu`: GPU ID to use (-1 for CPU, default: -1)
+- `--visualize`: Generate visualizations of the original and sparsified graphs
+- `--visualize-tsp`: Generate TSP solution overlay visualizations
+- `--layout`: Layout algorithm for visualization (spring, circular, kamada_kawai, spectral, shell)
+
+### Visualization
+
+To generate visualizations of the original and sparsified graphs, add the `--visualize` flag:
+
+```bash
+python inference.py --graph_path random_graph.gpickle --threshold 0.7 --visualize
+```
+
+This will create two image files alongside your output graph:
+1. `sparsified_graph_visualization.png` - Side-by-side comparison of original and sparsified graphs
+2. `sparsified_graph_degree_dist.png` - Comparison of degree distributions
+
+### TSP Solution Visualization
+
+To analyze how well the sparsified graph preserves TSP solutions, add the `--visualize-tsp` flag:
+
+```bash
+python inference.py --graph_path random_graph.gpickle --threshold 0.7 --visualize --visualize-tsp
+```
+
+This generates an additional visualization:
+- `sparsified_graph_tsp_visualization.png` - Shows TSP path overlay with:
+  - Green: TSP edges that were retained in the sparsified graph
+  - Red (dashed): TSP edges that were lost during sparsification
+  - Light gray: Non-TSP edges
+
+The visualization also includes statistics about:
+- TSP Coverage: Percentage of TSP edges retained in sparsified graph
+- TSP Efficiency: Percentage of sparsified edges that are part of the TSP solution
+
+Note: TSP visualization requires PyConcorde. Install it with:
+```bash
+pip install concorde
+```
 
 ### Input Graph Format
 
@@ -69,8 +107,18 @@ for u, v in G.edges():
 nx.write_gpickle(G, "random_graph.gpickle")
 ```
 
-Then sparsify it:
+Then sparsify it with visualization including TSP analysis:
 
 ```bash
-python inference.py --graph_path random_graph.gpickle --threshold 0.7
+python inference.py --graph_path random_graph.gpickle --threshold 0.7 --visualize --visualize-tsp
 ```
+
+## Using the Helper Script
+
+For convenience, you can use the `run_inference.sh` script:
+
+```bash
+./run_inference.sh best_model.pkl random_graph.gpickle 0.7 --visualize --visualize-tsp
+```
+
+This script automatically checks for and creates the model info file if needed.
