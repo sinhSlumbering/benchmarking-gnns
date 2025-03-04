@@ -106,6 +106,36 @@ def select_graph(testset, args):
     print(f"Selected graph index: {index}")
     return testset[index], index
 
+def process_undirected_predictions(graph, predictions):
+    """Process predictions to ensure consistent undirected graph representation.
+    For conflicting u->v and v->u predictions, choose the one that will increase
+    the number of predicted 1 edges."""
+    # Get the graph's edges and their reverse mappings
+    g_nx = graph.to_networkx(node_attrs=['feat'], edge_attrs=['feat'])
+    edge_list = list(g_nx.edges())
+    
+    # Create a dictionary to store edge predictions
+    edge_pred_dict = {}
+    
+    # First pass: collect all predictions
+    for i, (u, v) in enumerate(edge_list):
+        pred = predictions[i].cpu().item()
+        # Store both directions
+        edge_pred_dict[(u, v)] = pred
+        
+    # Second pass: resolve conflicts for undirected representation
+    resolved_predictions = torch.clone(predictions)
+    
+    for i, (u, v) in enumerate(edge_list):
+        # Check if reverse edge exists in our dictionary
+        if (v, u) in edge_pred_dict and (u, v) in edge_pred_dict:
+            # If predictions differ, prefer the one with value 1
+            if edge_pred_dict[(u, v)] != edge_pred_dict[(v, u)]:
+                # Choose prediction 1 over 0
+                resolved_predictions[i] = 1
+    
+    return resolved_predictions
+
 def make_predictions(model, graph, args):
     """Make predictions on the selected graph."""
     model.eval()
@@ -122,6 +152,9 @@ def make_predictions(model, graph, args):
         
         # Get edge predictions (binary classification)
         _, predicted = torch.max(pred, 1)
+        
+        # Process predictions to ensure undirected graph consistency
+        predicted = process_undirected_predictions(graph, predicted)
         
         return predicted
 
