@@ -113,8 +113,12 @@ def make_predictions(model, graph, args):
         # Prepare graph
         graph = graph.to(args.device)
         
-        # Forward pass
-        pred = model(graph)
+        # Extract node and edge features
+        h = graph.ndata['feat']
+        e = graph.edata['feat']
+        
+        # Forward pass with node and edge features
+        pred = model(graph, h, e)
         
         # Get edge predictions (binary classification)
         _, predicted = torch.max(pred, 1)
@@ -142,12 +146,14 @@ def visualize_tsp_solution(graph, edge_labels, predictions, graph_index, args):
     nx.draw_networkx_nodes(g_nx, pos, node_size=300, node_color='lightblue', alpha=0.8)
     
     # Draw edges with color coding:
-    # - Green: Predicted correctly
-    # - Red: Predicted incorrectly
+    # - Light Grey: Edges predicted as 1 (part of sparsified graph)
+    # - Green: Correctly predicted edges that are part of the actual TSP solution (label=1, pred=1)
+    # - Red: Incorrectly predicted edges that should have been part of the solution (label=1, pred=0)
     
-    # Create lists for edges based on prediction results
-    edges_correct = []
-    edges_incorrect = []
+    # Create lists for different edge categories
+    edges_predicted_as_1 = []  # All edges predicted as 1 (sparsified graph)
+    edges_correct_solution = []  # Correctly predicted edges that are part of the solution (label=1, pred=1)
+    edges_missed_solution = []  # Edges that should be in solution but were missed (label=1, pred=0)
     
     # Get original edge order to match predictions with edges
     edge_list = list(g_nx.edges())
@@ -155,36 +161,59 @@ def visualize_tsp_solution(graph, edge_labels, predictions, graph_index, args):
     for i, (u, v) in enumerate(edge_list):
         # Convert to CPU tensors
         pred = predictions[i].cpu().item()
-        label = edge_labels[i].cpu().item()
         
-        if pred == label:
-            edges_correct.append((u, v))
+        # Check if edge_labels is a tensor or numpy array and handle accordingly
+        if isinstance(edge_labels[i], torch.Tensor):
+            label = edge_labels[i].cpu().item()
         else:
-            edges_incorrect.append((u, v))
+            # Handle numpy or other types directly
+            label = edge_labels[i]
+        
+        # Edges predicted as 1 (part of sparsified graph)
+        if pred == 1:
+            edges_predicted_as_1.append((u, v))
+            
+            # If it's also part of the actual solution (label=1)
+            if label == 1:
+                edges_correct_solution.append((u, v))
+        
+        # Edges that should be in solution but were missed (label=1, pred=0)
+        elif label == 1 and pred == 0:
+            edges_missed_solution.append((u, v))
     
-    # Draw correct edges in green
-    nx.draw_networkx_edges(g_nx, pos, edgelist=edges_correct, width=1.5, alpha=0.7, edge_color='green')
+    # Draw edges predicted as 1 in light grey (sparsified graph)
+    nx.draw_networkx_edges(g_nx, pos, edgelist=edges_predicted_as_1, width=1.5, alpha=0.5, edge_color='lightgrey')
     
-    # Draw incorrect edges in red
-    nx.draw_networkx_edges(g_nx, pos, edgelist=edges_incorrect, width=1.5, alpha=0.7, edge_color='red')
+    # Draw correctly predicted solution edges in green (overwrite the grey ones)
+    nx.draw_networkx_edges(g_nx, pos, edgelist=edges_correct_solution, width=2.0, alpha=0.9, edge_color='green')
+    
+    # Draw missed solution edges in red
+    nx.draw_networkx_edges(g_nx, pos, edgelist=edges_missed_solution, width=2.0, alpha=0.9, edge_color='red', style='dashed')
     
     # Calculate metrics for this graph
-    total_edges = len(edge_list)
-    correct_edges = len(edges_correct)
-    incorrect_edges = len(edges_incorrect)
-    accuracy = correct_edges / total_edges if total_edges > 0 else 0
+    total_predicted_as_1 = len(edges_predicted_as_1)
+    total_actual_solution = sum(1 for i, _ in enumerate(edge_list) if 
+                              (isinstance(edge_labels[i], torch.Tensor) and edge_labels[i].cpu().item() == 1) or 
+                              (not isinstance(edge_labels[i], torch.Tensor) and edge_labels[i] == 1))
+    correct_solution_edges = len(edges_correct_solution)
+    missed_solution_edges = len(edges_missed_solution)
+    
+    solution_accuracy = correct_solution_edges / total_actual_solution if total_actual_solution > 0 else 0
     
     # Add a title with metrics
-    plt.title(f"TSP Graph {graph_index} - Prediction Results\n"
-              f"Total Edges: {total_edges}, Correct: {correct_edges}, "
-              f"Incorrect: {incorrect_edges}, Accuracy: {accuracy:.4f}", 
+    plt.title(f"TSP Graph {graph_index} - Tour Prediction Results\n"
+              f"Predicted Edges: {total_predicted_as_1}, "
+              f"Correct Solution Edges: {correct_solution_edges}/{total_actual_solution}, "
+              f"Missed: {missed_solution_edges}, "
+              f"Solution Accuracy: {solution_accuracy:.4f}", 
               fontsize=12)
     
     # Add legend
     from matplotlib.lines import Line2D
     legend_elements = [
-        Line2D([0], [0], color='green', lw=2, label='Correct Prediction'),
-        Line2D([0], [0], color='red', lw=2, label='Incorrect Prediction')
+        Line2D([0], [0], color='lightgrey', lw=2, label='Predicted Edge (Sparsified Graph)'),
+        Line2D([0], [0], color='green', lw=2, label='Correct Solution Edge'),
+        Line2D([0], [0], color='red', lw=2, linestyle='dashed', label='Missed Solution Edge')
     ]
     plt.legend(handles=legend_elements, loc='upper right')
     
@@ -192,14 +221,14 @@ def visualize_tsp_solution(graph, edge_labels, predictions, graph_index, args):
     plt.axis('off')
     
     # Save visualization
-    file_path = os.path.join(args.output_dir, f"tsp_graph_{graph_index}_visualization.png")
+    file_path = os.path.join(args.output_dir, f"tsp_graph_{graph_index}_tour_prediction.png")
     plt.savefig(file_path, dpi=300, bbox_inches='tight')
     print(f"Visualization saved to {file_path}")
     
     # Show the plot
     plt.show()
     
-    return accuracy, correct_edges, incorrect_edges
+    return solution_accuracy, correct_solution_edges, missed_solution_edges
 
 def create_actual_tour_visualization(graph, edge_labels, graph_index, args):
     """Create visualization of the actual TSP tour."""
@@ -224,7 +253,14 @@ def create_actual_tour_visualization(graph, edge_labels, graph_index, args):
     edge_list = list(g_nx.edges())
     tour_edges = []
     for i, (u, v) in enumerate(edge_list):
-        if edge_labels[i].cpu().item() == 1:
+        # Check if edge_labels is a tensor or numpy array and handle accordingly
+        if isinstance(edge_labels[i], torch.Tensor):
+            label = edge_labels[i].cpu().item()
+        else:
+            # Handle numpy or other types directly
+            label = edge_labels[i]
+            
+        if label == 1:
             tour_edges.append((u, v))
     
     # Draw tour edges in blue
@@ -244,6 +280,119 @@ def create_actual_tour_visualization(graph, edge_labels, graph_index, args):
     # Show the plot
     plt.show()
 
+def create_side_by_side_visualization(graph, edge_labels, predictions, graph_index, args):
+    """Create a side-by-side visualization of original graph and prediction results."""
+    # Create output directory if it doesn't exist
+    os.makedirs(args.output_dir, exist_ok=True)
+    
+    # Convert DGL graph to NetworkX for visualization
+    g_nx = graph.to_networkx(node_attrs=['feat'], edge_attrs=['feat'])
+    
+    # Get node positions from node features (x,y coordinates)
+    pos = {}
+    for node_id, node_data in g_nx.nodes(data=True):
+        pos[node_id] = node_data['feat'].cpu().numpy()
+    
+    # Create figure with two subplots side by side
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, 10))
+    fig.suptitle(f"TSP Graph {graph_index} - Original vs Prediction", fontsize=16)
+    
+    # Get original edge order to match predictions with edges
+    edge_list = list(g_nx.edges())
+    
+    # Prepare edge categories for prediction visualization
+    edges_predicted_as_1 = []  # All edges predicted as 1 (sparsified graph)
+    edges_correct_solution = []  # Correctly predicted edges that are part of the solution (label=1, pred=1)
+    edges_missed_solution = []  # Edges that should be in solution but were missed (label=1, pred=0)
+    
+    # Get tour edges for original visualization
+    tour_edges = []
+    
+    print(f"very very important {len(edge_list)}")
+    for i, (u, v) in enumerate(edge_list):
+        # Convert to CPU tensors
+        pred = predictions[i].cpu().item()
+        
+        # Check if edge_labels is a tensor or numpy array and handle accordingly
+        if isinstance(edge_labels[i], torch.Tensor):
+            label = edge_labels[i].cpu().item()
+        else:
+            # Handle numpy or other types directly
+            label = edge_labels[i]
+        
+        # For original graph - identify tour edges
+        if label == 1:
+            tour_edges.append((u, v))
+        
+        # For prediction graph - categorize edges
+        if pred == 1:
+            edges_predicted_as_1.append((u, v))
+            if label == 1:
+                edges_correct_solution.append((u, v))
+        elif label == 1 and pred == 0:
+            edges_missed_solution.append((u, v))
+    
+    # Calculate metrics
+    total_predicted_as_1 = len(edges_predicted_as_1)
+    total_actual_solution = len(tour_edges)
+    correct_solution_edges = len(edges_correct_solution)
+    missed_solution_edges = len(edges_missed_solution)
+    solution_accuracy = correct_solution_edges / total_actual_solution if total_actual_solution > 0 else 0
+    
+    # ORIGINAL GRAPH (LEFT SUBPLOT)
+    # Draw nodes
+    nx.draw_networkx_nodes(g_nx, pos, node_size=300, node_color='lightblue', alpha=0.8, ax=ax1)
+    
+    # Draw all edges in light grey
+    nx.draw_networkx_edges(g_nx, pos, width=1.0, alpha=0.3, edge_color='lightgrey', ax=ax1)
+    
+    # Draw tour edges in blue
+    nx.draw_networkx_edges(g_nx, pos, edgelist=tour_edges, width=2.0, alpha=0.9, edge_color='blue', ax=ax1)
+    
+    # Set title for original graph
+    ax1.set_title(f"Original Graph with TSP Tour\nTour Length: {total_actual_solution} edges", fontsize=12)
+    ax1.axis('off')
+    
+    # PREDICTION GRAPH (RIGHT SUBPLOT)
+    # Draw nodes
+    nx.draw_networkx_nodes(g_nx, pos, node_size=300, node_color='lightblue', alpha=0.8, ax=ax2)
+    
+    # Draw edges predicted as 1 in light grey (sparsified graph)
+    nx.draw_networkx_edges(g_nx, pos, edgelist=edges_predicted_as_1, width=1.5, alpha=0.5, edge_color='lightgrey', ax=ax2)
+    
+    # Draw correctly predicted solution edges in green
+    nx.draw_networkx_edges(g_nx, pos, edgelist=edges_correct_solution, width=2.0, alpha=0.9, edge_color='green', ax=ax2)
+    
+    # Draw missed solution edges in red
+    nx.draw_networkx_edges(g_nx, pos, edgelist=edges_missed_solution, width=2.0, alpha=0.9, edge_color='red', style='dashed', ax=ax2)
+    
+    # Set title for prediction graph
+    ax2.set_title(f"Prediction Results\nPredicted Edges: {total_predicted_as_1}, Correct: {correct_solution_edges}/{total_actual_solution}, Missed: {missed_solution_edges}\nSolution Accuracy: {solution_accuracy:.4f}", fontsize=12)
+    ax2.axis('off')
+    
+    # Add legend
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], color='blue', lw=2, label='Actual Tour Edge'),
+        Line2D([0], [0], color='lightgrey', lw=2, label='Predicted Edge'),
+        Line2D([0], [0], color='green', lw=2, label='Correct Prediction'),
+        Line2D([0], [0], color='red', lw=2, linestyle='dashed', label='Missed Edge')
+    ]
+    fig.legend(handles=legend_elements, loc='lower center', ncol=4, fontsize=12, bbox_to_anchor=(0.5, 0.02))
+    
+    # Adjust layout
+    plt.tight_layout(rect=[0, 0.05, 1, 0.95])
+    
+    # Save visualization
+    file_path = os.path.join(args.output_dir, f"tsp_graph_{graph_index}_side_by_side.png")
+    plt.savefig(file_path, dpi=300, bbox_inches='tight')
+    print(f"Side-by-side visualization saved to {file_path}")
+    
+    # Show the plot
+    plt.show()
+    
+    return solution_accuracy, correct_solution_edges, missed_solution_edges
+
 def main():
     """Main function."""
     args = parse_args()
@@ -260,15 +409,12 @@ def main():
     # Make predictions
     predictions = make_predictions(model, graph, args)
     
-    # First create visualization of actual tour
-    create_actual_tour_visualization(graph, edge_labels, graph_index, args)
-    
-    # Visualize predictions with color-coded edges
-    accuracy, correct_edges, incorrect_edges = visualize_tsp_solution(
+    # Create side-by-side visualization
+    accuracy, correct_edges, missed_edges = create_side_by_side_visualization(
         graph, edge_labels, predictions, graph_index, args)
     
     print(f"Graph {graph_index} prediction accuracy: {accuracy:.4f}")
-    print(f"Correct edges: {correct_edges}, Incorrect edges: {incorrect_edges}")
+    print(f"Correct edges: {correct_edges}, Missed edges: {missed_edges}")
 
 if __name__ == "__main__":
     main()

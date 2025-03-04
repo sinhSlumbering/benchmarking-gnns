@@ -105,10 +105,9 @@ class TSP(Dataset):
         # Edge adjacency matrix representation of tour
         edges_target = np.zeros((num_nodes, num_nodes), dtype=np.int32)
         edges_target[tour_nodes[:-1], tour_nodes[1:]] = 1
-        edges_target[tour_nodes[1:], tour_nodes[:-1]] = 1
         edges_target[tour_nodes[-1], tour_nodes[0]] = 1
+        edges_target[tour_nodes[1:], tour_nodes[:-1]] = 1
         edges_target[tour_nodes[0], tour_nodes[-1]] = 1
-
         # Global max and min weights
         global_max_weight = distances.max()
         global_min_weight = max(distances.min(), 1e-9)

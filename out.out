@@ -1,10 +1,14 @@
-Traceback (most recent call last):
-  File "/home/cailtsptest/tsp/benchmarking-gnns/visualize_tsp_predictions.py", line 295, in <module>
-    main()
-  File "/home/cailtsptest/tsp/benchmarking-gnns/visualize_tsp_predictions.py", line 270, in main
-    args = parse_args()
-           ^^^^^^^^^^^^
-  File "/home/cailtsptest/tsp/benchmarking-gnns/visualize_tsp_predictions.py", line 61, in parse_args
-    if torch.cuda.is_available() and args.device != "cpu":
-       ^^^^^
-NameError: name 'torch' is not defined
+Loading dataset...
+[I] Loading dataset TSP...
+<_io.BufferedReader name='data/TSP/TSP.pkl'>
+Train, Val, Test sizes: 1000 100 100
+[I] Finished loading.
+[I] Data load time: 2.0376s
+Number of test graphs: 100
+Loading model from best_model.pkl...
+Model loaded successfully
+Selected graph index: 81
+Actual tour visualization saved to ./tsp_visualizations/tsp_graph_81_actual_tour.png
+Visualization saved to ./tsp_visualizations/tsp_graph_81_visualization.png
+Graph 81 prediction accuracy: 0.9656
+Correct edges: 9559, Incorrect edges: 341
