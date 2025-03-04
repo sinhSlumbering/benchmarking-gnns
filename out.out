@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/home/cailtsptest/tsp/benchmarking-gnns/visualize_tsp_predictions.py", line 295, in <module>
+    main()
+  File "/home/cailtsptest/tsp/benchmarking-gnns/visualize_tsp_predictions.py", line 270, in main
+    args = parse_args()
+           ^^^^^^^^^^^^
+  File "/home/cailtsptest/tsp/benchmarking-gnns/visualize_tsp_predictions.py", line 61, in parse_args
+    if torch.cuda.is_available() and args.device != "cpu":
+       ^^^^^
+NameError: name 'torch' is not defined
