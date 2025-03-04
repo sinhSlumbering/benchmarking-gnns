@@ -33,16 +33,16 @@ def get_node_coords(graph):
     numpy.ndarray
         Array of node coordinates with shape (n_nodes, 2)
     """
-    # First try to get coordinates from node attributes
+    # First check if nodes have 'pos' attribute (this is the expected format for TSP graphs)
     if graph.number_of_nodes() > 0:
-        # Check if nodes have 'pos' or 'coord' attributes
-        first_node = list(graph.nodes(data=True))[0]
-        if 'pos' in first_node[1]:
-            return np.array([data['pos'] for _, data in graph.nodes(data=True)])
-        elif 'coord' in first_node[1]:
-            return np.array([data['coord'] for _, data in graph.nodes(data=True)])
+        if 'pos' in next(iter(graph.nodes(data=True)))[1]:
+            return np.array([data['pos'] for _, data in sorted(graph.nodes(data=True))])
     
-    # If no coordinates found or empty graph, create random coordinates
+    # If no 'pos' attribute found, check if nodes have 'feat' attribute in DGL format
+    if hasattr(graph, 'ndata') and 'feat' in graph.ndata:
+        return graph.ndata['feat'].numpy()
+    
+    # As a fallback, create random coordinates
     n_nodes = graph.number_of_nodes()
     return np.random.rand(n_nodes, 2)
 
@@ -74,15 +74,19 @@ def compute_tsp_solution(graph):
     scale_factor = 1000000
     int_coords = (coords * scale_factor).astype(int)
     
-    # Create TSP solver
-    solver = TSPSolver.from_data(int_coords[:, 0], int_coords[:, 1], norm="EUC_2D")
-    
-    # Solve TSP
-    solution = solver.solve()
-    
-    # Extract tour
-    tour = solution.tour
-    tour_length = solution.optimal_value / scale_factor
+    try:
+        # Create TSP solver
+        solver = TSPSolver.from_data(int_coords[:, 0], int_coords[:, 1], norm="EUC_2D")
+        
+        # Solve TSP
+        solution = solver.solve()
+        
+        # Extract tour
+        tour = solution.tour
+        tour_length = solution.optimal_value / scale_factor
+    except Exception as e:
+        warnings.warn(f"Error using Concorde: {str(e)}. Falling back to nearest neighbor.")
+        return compute_tsp_nearest_neighbor(graph)
     
     # Create edges from tour (connecting consecutive nodes in the tour)
     tour_edges = set()
@@ -204,3 +208,50 @@ def compare_sparsified_with_tsp(original_graph, sparsified_graph, tsp_edges=None
         "tsp_edges_in_sparsified_set": tsp_edges_in_sparsified,
         "tsp_edges_missed_set": tsp_edges - sparsified_edges
     }
+
+# If running this script directly, test with a small example
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    
+    # Create a small test graph
+    G = nx.DiGraph()
+    n_nodes = 20
+    
+    # Add nodes with 2D coordinates
+    for i in range(n_nodes):
+        # Random coordinates in [0,1] x [0,1]
+        G.add_node(i, pos=np.random.rand(2))
+    
+    # Add edges (fully connected)
+    for i in range(n_nodes):
+        for j in range(n_nodes):
+            if i != j:  # No self-loops
+                # Calculate Euclidean distance between nodes
+                dist = np.sqrt(np.sum((G.nodes[i]['pos'] - G.nodes[j]['pos'])**2))
+                G.add_edge(i, j, weight=dist)
+    
+    # Compute TSP solution
+    tour, tour_length, tour_edges = compute_tsp_solution(G)
+    print(f"TSP Tour: {tour}")
+    print(f"TSP Length: {tour_length:.2f}")
+    print(f"Number of TSP edges: {len(tour_edges)}")
+    
+    # Visualize the tour
+    plt.figure(figsize=(10, 10))
+    pos = nx.get_node_attributes(G, 'pos')
+    
+    # Draw all edges lightly
+    nx.draw_networkx_edges(G, pos, alpha=0.1)
+    
+    # Create a subgraph with only TSP edges
+    tsp_graph = G.edge_subgraph(tour_edges)
+    nx.draw_networkx_edges(tsp_graph, pos, edge_color='r', width=2)
+    
+    # Draw nodes
+    nx.draw_networkx_nodes(G, pos, node_size=50)
+    
+    plt.title("TSP Solution")
+    plt.axis('off')
+    plt.tight_layout()
+    plt.savefig("tsp_test.png", dpi=300)
+    print("Test visualization saved to tsp_test.png")

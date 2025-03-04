@@ -24,15 +24,18 @@
     
     "net_params": {
         "L": 4,
-        "hidden_dim": 65,
-        "out_dim": 65,
+        "hidden_dim": 70,
+        "out_dim": 70,
         "residual": true,
-        "edge_feat": false,
+        "edge_feat": true,
         "readout": "mean",
         "in_feat_dropout": 0.0,
         "dropout": 0.0,
         "batch_norm": true,
         "layer_type": "edgereprfeat",
-        "class_weights": [0.01,0.99]
+        "class_weights": [0.01,0.99],
+        "self_loop": false,
+        "pos_enc_dim": 0,
+        "save_last_epoch": true
     }
 }

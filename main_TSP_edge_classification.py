@@ -277,6 +277,44 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
     with open('best_model_info.pkl', 'wb') as f:
         pickle.dump(model_info, f)
 
+    # Save the last epoch model
+    if net_params['save_last_epoch']:  # Can be controlled via config
+        last_epoch_dir = os.path.join(root_ckpt_dir, "last_epoch_model")
+        os.makedirs(last_epoch_dir, exist_ok=True)
+        
+        last_epoch_path = os.path.join(last_epoch_dir, "last_epoch_model.pkl")
+        last_epoch_info_path = os.path.join(last_epoch_dir, "last_epoch_model_info.pkl")
+        
+        print(f"\nSaving the last epoch model to {last_epoch_path}")
+        torch.save(model.state_dict(), last_epoch_path)
+        
+        # Create model info dictionary
+        last_epoch_model_info = {
+            'net_params': net_params,
+            'final_train_loss': epoch_train_losses[-1] if epoch_train_losses else None,
+            'final_val_loss': epoch_val_losses[-1] if epoch_val_losses else None,
+            'final_test_loss': epoch_test_loss if epoch_test_loss else None,
+            'final_train_metric': epoch_train_f1s[-1] if epoch_train_f1s else None,
+            'final_val_metric': epoch_val_f1s[-1] if epoch_val_f1s else None,
+            'final_test_metric': epoch_test_f1 if epoch_test_f1 else None,
+            'best_val_metric': best_val_f1,
+            'best_epoch': best_epoch,
+            'total_epochs': epoch,
+            'total_time_training': time.time() - t0
+        }
+        
+        # Save model info
+        with open(last_epoch_info_path, 'wb') as f:
+            pickle.dump(last_epoch_model_info, f)
+        
+        # For convenience, also save copies in the root directory
+        root_last_model_path = os.path.join(os.path.dirname(os.path.dirname(last_epoch_dir)), "last_model.pkl")
+        root_last_model_info_path = os.path.join(os.path.dirname(os.path.dirname(last_epoch_dir)), "last_model_info.pkl")
+        
+        torch.save(model.state_dict(), root_last_model_path)
+        with open(root_last_model_info_path, 'wb') as f:
+            pickle.dump(last_epoch_model_info, f)
+
     writer.close()
 
     # Write the results
@@ -482,6 +520,11 @@ def main():
         os.makedirs(out_dir + 'configs')
 
     net_params['total_param'] = view_model_param(MODEL_NAME, net_params)
+    
+    # Add save_last_epoch parameter to net_params with default value True
+    if 'save_last_epoch' not in net_params:
+        net_params['save_last_epoch'] = True
+
     model_info = train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs)
     
     print(f"\nBest model saved to current directory with validation F1: {model_info['best_val_f1']:.4f}")

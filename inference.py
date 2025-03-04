@@ -51,7 +51,7 @@ def prepare_graph(nx_graph, node_features=None, edge_features=None):
     nx_graph : networkx.DiGraph
         Input graph to be processed
     node_features : dict, optional
-        Dictionary mapping node IDs to feature vectors
+        Dictionary mapping node IDs to feature vectors (x,y coordinates)
     edge_features : dict, optional
         Dictionary mapping edge tuples (u,v) to feature vectors
         
@@ -63,29 +63,78 @@ def prepare_graph(nx_graph, node_features=None, edge_features=None):
     # Create a DGL graph from the NetworkX graph
     g = dgl.from_networkx(nx_graph, edge_attrs=['weight'] if 'weight' in next(iter(nx_graph.edges(data=True)))[2] else None)
     
-    # Add default node features if not provided
+    # Add node features (x,y coordinates)
     if node_features is None:
-        # Default: use node degree as feature
-        in_degrees = torch.FloatTensor([nx_graph.in_degree(i) for i in range(nx_graph.number_of_nodes())])
-        out_degrees = torch.FloatTensor([nx_graph.out_degree(i) for i in range(nx_graph.number_of_nodes())])
-        node_feats = torch.stack([in_degrees, out_degrees], dim=1)
-        g.ndata['feat'] = node_feats
+        # If no coordinates provided, check if nodes have 'pos' attribute in the graph
+        if nx_graph.number_of_nodes() > 0 and 'pos' in next(iter(nx_graph.nodes(data=True)))[1]:
+            # Extract coordinates from node attributes
+            coords = []
+            for _, data in sorted(nx_graph.nodes(data=True)):
+                coords.append(data['pos'])
+            node_feats = torch.FloatTensor(coords)
+        else:
+            # Generate random 2D coordinates if not found
+            node_feats = torch.rand((nx_graph.number_of_nodes(), 2))
     else:
-        # Convert the provided node features to tensor
+        # Use provided coordinates
         nodes = sorted(nx_graph.nodes())
         node_feats = torch.FloatTensor([node_features[n] for n in nodes])
-        g.ndata['feat'] = node_feats
+    
+    g.ndata['feat'] = node_feats
         
-    # Add default edge features if not provided
+    # Add edge features
     if edge_features is None:
-        # Default: use edge weight as feature (or 1.0 if no weight)
-        if 'weight' in g.edata:
-            edge_feats = torch.FloatTensor(g.edata['weight']).view(-1, 1)
-        else:
-            edge_feats = torch.ones(g.number_of_edges(), 1)
-        g.edata['feat'] = edge_feats
+        # Get distances between nodes based on coordinates
+        coords = node_feats.numpy()
+        edges = list(nx_graph.edges())
+        
+        # Compute edge weights if not present
+        if 'weight' not in g.edata:
+            # Compute Euclidean distances between connected nodes
+            weights = []
+            for u, v in edges:
+                dist = np.sqrt(np.sum((coords[u] - coords[v])**2))
+                weights.append(dist)
+            
+            # Add weights to graph
+            g.edata['weight'] = torch.FloatTensor(weights).view(-1, 1)
+        
+        # Compute global min and max weights
+        weights = g.edata['weight'].view(-1).numpy()
+        global_max_weight = np.max(weights)
+        global_min_weight = max(np.min(weights), 1e-9)
+        
+        # Compute per-node max and min weights
+        node_max_weights = {}
+        node_min_weights = {}
+        
+        for i, (u, v) in enumerate(edges):
+            w = weights[i]
+            # Update node max
+            node_max_weights[u] = max(node_max_weights.get(u, 0), w)
+            # Update node min
+            if u not in node_min_weights:
+                node_min_weights[u] = w
+            else:
+                node_min_weights[u] = min(node_min_weights[u], w)
+        
+        # Create edge features based on TSP edge format
+        edge_feats = []
+        for i, (u, v) in enumerate(edges):
+            weight = weights[i]
+            max_weight = max(node_max_weights.get(u, weight), 1e-9)
+            min_weight = max(node_min_weights.get(u, weight), 1e-9)
+            
+            edge_feats.append([
+                weight / global_max_weight,
+                weight / max_weight,
+                min_weight / max(weight, 1e-9),
+                global_min_weight / max(weight, 1e-9)
+            ])
+        
+        g.edata['feat'] = torch.FloatTensor(edge_feats)
     else:
-        # Convert the provided edge features to tensor
+        # Use provided edge features
         edges = list(nx_graph.edges())
         edge_feats = torch.FloatTensor([edge_features[e] for e in edges])
         g.edata['feat'] = edge_feats
@@ -194,7 +243,7 @@ def load_model(model_path, info_path, device):
 
 def convert_to_dgl_graph(nx_graph):
     """
-    Convert a NetworkX graph to a DGL graph with appropriate node and edge features.
+    Convert a NetworkX graph to a DGL graph with appropriate node and edge features for TSP.
     
     Parameters:
     -----------
@@ -206,41 +255,80 @@ def convert_to_dgl_graph(nx_graph):
     dgl.DGLGraph
         The converted DGL graph with node and edge features
     """
-    # Check for edge attributes safely
+    # Check for edge attributes
     has_weight = False
     if nx_graph.number_of_edges() > 0:
-        # Get the first edge and check if it has a weight attribute
         first_edge = list(nx_graph.edges(data=True))[0]
         has_weight = 'weight' in first_edge[2]
     
     # Create DGL graph from networkx
     dgl_graph = dgl.from_networkx(nx_graph, edge_attrs=['weight'] if has_weight else None)
     
-    # Add default node and edge features expected by the model
+    # Get node coordinates (either use existing or generate random)
     n_nodes = dgl_graph.num_nodes()
-    n_edges = dgl_graph.num_edges()
     
-    # Generate random node positions if not present (2D coordinates for TSP-like problems)
-    node_features = torch.rand((n_nodes, 2))  # 2D coordinates
-    dgl_graph.ndata['feat'] = node_features
+    # Check if nodes have position attributes
+    node_coords = None
+    if nx_graph.number_of_nodes() > 0:
+        if 'pos' in next(iter(nx_graph.nodes(data=True)))[1]:
+            # Extract positions from node attributes
+            node_coords = np.array([data['pos'] for _, data in sorted(nx_graph.nodes(data=True))])
     
-    # Handle edge features - CRITICAL: Must match model's expected input dimension (in_dim_edge)
-    # The error shows matrix shapes (505x1 and 4x65) can't be multiplied
-    # This means the model expects edge features of dimension 4, not 1
-    if has_weight and 'weight' in dgl_graph.edata:
-        # Create edge features that match expected dimension
-        weights = dgl_graph.edata['weight'].view(-1, 1)
-        # Expand the dimension from 1 to 4 by duplicating and adding noise
-        expanded_features = torch.cat([
-            weights,                                # Original weight
-            weights + 0.01 * torch.rand(n_edges, 1),  # Slightly perturbed weight
-            weights - 0.01 * torch.rand(n_edges, 1),  # Slightly perturbed weight (negative direction)
-            torch.rand(n_edges, 1)                  # Random feature
-        ], dim=1)
-        dgl_graph.edata['feat'] = expanded_features
+    # If no coordinates found, generate random ones
+    if node_coords is None:
+        node_coords = np.random.rand(n_nodes, 2)  # Random 2D coordinates
+    
+    # Set node features to coordinates
+    dgl_graph.ndata['feat'] = torch.FloatTensor(node_coords)
+    
+    # Calculate edge features based on node coordinates and TSP requirements
+    edges = list(nx_graph.edges())
+    weights = []
+    
+    # Compute edge weights if not already present
+    if not has_weight or 'weight' not in dgl_graph.edata:
+        for u, v in edges:
+            dist = np.sqrt(np.sum((node_coords[u] - node_coords[v])**2))
+            weights.append(dist)
+        
+        edge_weights = np.array(weights)
     else:
-        # Generate 4-dimensional random edge features
-        dgl_graph.edata['feat'] = torch.rand((n_edges, 4))
+        edge_weights = dgl_graph.edata['weight'].numpy().flatten()
+    
+    # Compute global stats
+    global_max_weight = max(np.max(edge_weights), 1e-9)
+    global_min_weight = max(np.min(edge_weights), 1e-9)
+    
+    # Compute per-node max and min weights
+    node_max_weights = {}
+    node_min_weights = {}
+    
+    for i, (u, v) in enumerate(edges):
+        w = edge_weights[i]
+        # Update max
+        node_max_weights[u] = max(node_max_weights.get(u, 0), w)
+        # Update min
+        if u not in node_min_weights:
+            node_min_weights[u] = w
+        else:
+            node_min_weights[u] = min(node_min_weights[u], w)
+    
+    # Create edge features according to the expected format
+    edge_feats = []
+    for i, (u, v) in enumerate(edges):
+        weight = edge_weights[i]
+        max_weight = max(node_max_weights.get(u, weight), 1e-9)  # Use node's max weight
+        min_weight = max(node_min_weights.get(u, weight), 1e-9)  # Use node's min weight
+        
+        edge_feats.append([
+            weight / global_max_weight,
+            weight / max_weight,
+            min_weight / max(weight, 1e-9),
+            global_min_weight / max(weight, 1e-9)
+        ])
+    
+    # Set the edge features
+    dgl_graph.edata['feat'] = torch.FloatTensor(edge_feats)
     
     return dgl_graph
 
@@ -278,7 +366,7 @@ def apply_model(model, g, device, threshold=0.5):
         model_output = model.forward(g, h, e)
         
         # Debug output shape
-        print(f"Model output shape: {[x.shape if isinstance(x, torch.Tensor) else type(x) for x in model_output]}")
+        # print(f"Model output shape: {[x.shape if isinstance(x, torch.Tensor) else type(x) for x in model_output]}")
         
         # Extract edge predictions - based on your model's output format
         # Common GatedGCN implementations return edge scores as one of the outputs
@@ -286,7 +374,7 @@ def apply_model(model, g, device, threshold=0.5):
             edge_logits = model_output[0]
             
             # Check shape of edge_logits
-            print(f"Edge logits shape: {edge_logits.shape}")
+            # print(f"Edge logits shape: {edge_logits.shape}")
             
             # Ensure edge_logits matches the number of edges
             if edge_logits.shape[0] != g.num_edges():
@@ -351,6 +439,7 @@ def main():
     parser = argparse.ArgumentParser(description='Graph sparsification inference')
     parser.add_argument('--model_path', type=str, default='best_model.pkl', help='Path to trained model')
     parser.add_argument('--info_path', type=str, default='best_model_info.pkl', help='Path to model info')
+    parser.add_argument('--use_last_epoch', action='store_true', help='Use last epoch model instead of best model')
     parser.add_argument('--graph_path', type=str, required=True, help='Path to input graph file')
     parser.add_argument('--output_path', type=str, default='sparsified_graph.gpickle', help='Output path')
     parser.add_argument('--threshold', type=float, default=0.5, help='Probability threshold for keeping edges')
@@ -361,6 +450,15 @@ def main():
                        help='Graph layout for visualization')
     parser.add_argument('--visualize-tsp', action='store_true', help='Generate TSP solution visualizations')
     args = parser.parse_args()
+    
+    # Override model path if using last epoch model
+    if args.use_last_epoch:
+        if os.path.exists('last_model.pkl'):
+            args.model_path = 'last_model.pkl'
+            args.info_path = 'last_model_info.pkl'
+            print("Using last epoch model instead of best model")
+        else:
+            print("Warning: Last epoch model not found, using specified model instead")
     
     # Set device
     device = torch.device(f'cuda:{args.gpu}' if args.gpu >= 0 and torch.cuda.is_available() else 'cpu')

@@ -31,6 +31,7 @@ python inference.py --graph_path path/to/your/graph.gpickle --output_path sparsi
 - `--visualize`: Generate visualizations of the original and sparsified graphs
 - `--visualize-tsp`: Generate TSP solution overlay visualizations
 - `--layout`: Layout algorithm for visualization (spring, circular, kamada_kawai, spectral, shell)
+- `--use_last_epoch`: Use the last epoch model instead of the best validation model
 
 ### Visualization
 
@@ -67,27 +68,59 @@ Note: TSP visualization requires PyConcorde. Install it with:
 pip install concorde
 ```
 
+### Using Last Epoch Model
+
+By default, the training script saves both:
+- The best model based on validation F1 score (`best_model.pkl`)
+- The model from the last training epoch (`last_model.pkl`)
+
+To use the last epoch model for inference:
+
+```bash
+python inference.py --graph_path random_graph.gpickle --use_last_epoch
+```
+
 ### Input Graph Format
 
 The script supports:
 - NetworkX pickle files (*.gpickle)
 - Edge list files
 
-For custom input graphs, you can create one using NetworkX:
+For TSP problems, the graphs should have:
+- Node features: 2D coordinates (x,y)
+- Edge features: Distance-based metrics according to the TSP format
+
+To create a proper TSP-compatible graph:
+
+```bash
+# Generate a random TSP graph with 100 nodes
+python generate_random_tsp_graph.py --n_nodes 100 --output random_tsp_graph.gpickle --visualize
+```
+
+Or manually create one using NetworkX:
 
 ```python
 import networkx as nx
+import numpy as np
 
 # Create a directed graph
 G = nx.DiGraph()
 
-# Add nodes and edges
-G.add_nodes_from(range(20))
-G.add_edges_from([(i, i+1) for i in range(19)])
-G.add_edges_from([(i, i+2) for i in range(18)])  # Add some shortcuts
+# Add nodes with 2D coordinates
+for i in range(20):
+    # Random coordinates in [0,1] x [0,1]
+    G.add_node(i, pos=np.random.rand(2))
+
+# Add edges (fully connected)
+for i in range(20):
+    for j in range(20):
+        if i != j:  # No self-loops
+            # Calculate Euclidean distance between nodes
+            dist = np.sqrt(np.sum((G.nodes[i]['pos'] - G.nodes[j]['pos'])**2))
+            G.add_edge(i, j, weight=dist)
 
 # Save the graph
-nx.write_gpickle(G, "my_test_graph.gpickle")
+nx.write_gpickle(G, "manual_tsp_graph.gpickle")
 ```
 
 ## Example with a Random Graph
@@ -119,6 +152,12 @@ For convenience, you can use the `run_inference.sh` script:
 
 ```bash
 ./run_inference.sh best_model.pkl random_graph.gpickle 0.7 --visualize --visualize-tsp
+```
+
+To use the last epoch model:
+
+```bash
+./run_inference.sh best_model.pkl random_graph.gpickle 0.7 --use-last-epoch
 ```
 
 This script automatically checks for and creates the model info file if needed.
